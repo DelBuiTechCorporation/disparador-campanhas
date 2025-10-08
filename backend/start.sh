@@ -45,8 +45,12 @@ else
 fi
 
 # Executar seed
-echo "🌱 Running database seed..."
-npx prisma db seed || echo "⚠️ Seed failed, continuing..."
+if [ "$SKIP_DEFAULT_SEED" = "true" ]; then
+    echo "🌱 Database seed skipped (SKIP_DEFAULT_SEED=true)"
+else
+    echo "🌱 Running database seed..."
+    npx prisma db seed || echo "⚠️ Seed failed, continuing..."
+fi
 
 # Gerar cliente prisma
 echo "🔧 Generating Prisma client..."
