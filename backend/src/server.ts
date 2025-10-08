@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import cors from 'cors';
 // import rateLimit from 'express-rate-limit'; // Temporariamente desabilitado
 import * as fs from 'fs';
+import * as path from 'path';
 import { contactRoutes } from './routes/contactRoutes';
 import { categoryRoutes } from './routes/categoryRoutes';
 import { mockRoutes } from './routes/mockRoutes';
@@ -46,29 +47,17 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// CORS configurado de forma segura
+// CORS configurado para permitir qualquer origem (frontend e backend juntos)
 const corsOptions = {
-  origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
-    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'https://localhost:3000'
-    ];
-
-    // Permitir requests sem origin (mobile apps, etc.)
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Não permitido pelo CORS'), false);
-    }
-  },
+  origin: true, // Permitir qualquer origem
   credentials: true,
   optionsSuccessStatus: 200
 };
 
 app.use(cors(corsOptions));
+
+// Servir frontend estático
+app.use(express.static(path.join(__dirname, '../public')));
 
 // Rate limiting temporariamente desabilitado devido a problemas com trust proxy
 /*
@@ -156,6 +145,11 @@ app.use('/api/automation', authMiddleware, automationRoutes); // Automation and 
 // app.use('/api/cache', cacheRoutes); // Cache management and monitoring
 app.use('/api/media', authMiddleware, mediaRoutes); // Upload de arquivos de mídia
 app.use('/api', authMiddleware, mockRoutes);
+
+// Catch-all para SPA
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

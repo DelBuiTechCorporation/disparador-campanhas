@@ -12,6 +12,16 @@ export class TenantSettingsService {
         throw new Error(`TenantID inválido: ${tenantId}`);
       }
 
+      // Verificar se o tenant existe
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId }
+      });
+
+      if (!tenant) {
+        console.error('❌ Tenant não encontrado para tenantId:', tenantId);
+        throw new Error(`Tenant não encontrado: ${tenantId}`);
+      }
+
       let settings = await prisma.tenantSettings.findUnique({
         where: { tenantId }
       });
