@@ -4,6 +4,12 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
+  // Skip default setup if environment variable is set
+  if (process.env.SKIP_DEFAULT_SEED === 'true') {
+    console.log('🌱 Default seed skipped (SKIP_DEFAULT_SEED=true)');
+    return;
+  }
+
   console.log('🌱 Starting default setup seed...');
 
   // 1. Create GlobalSettings (singleton)
