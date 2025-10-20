@@ -28,9 +28,15 @@ RUN npm prune --production
 # Stage 3: Runtime
 FROM node:20-alpine AS runtime
 
-RUN apk add --no-cache openssl postgresql-client
+ARG TIMEZONE=America/Sao_Paulo
+
+RUN apk add --no-cache openssl postgresql-client tzdata
 
 WORKDIR /app
+
+# Set timezone
+ENV TZ=${TIMEZONE}
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Create app user
 RUN addgroup -g 1001 -S nodejs
