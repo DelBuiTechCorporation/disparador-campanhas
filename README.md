@@ -19,16 +19,15 @@
 
 ## 📋 Sobre o Projeto
 
-O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-source para gerenciamento e execução de campanhas de WhatsApp em massa. Desenvolvido com arquitetura moderna, oferece recursos enterprise como isolamento total de dados por empresa, sistema de quotas, backup/restore automatizado, inteligência artificial para personalização de mensagens e suporte a múltiplos provedores WhatsApp (WAHA, Evolution API e QuePasa), além de integração com Chatwoot para importação de contatos.
+O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-source para gerenciamento e execução de campanhas de WhatsApp em massa. Desenvolvido com arquitetura moderna, oferece recursos enterprise como isolamento total de dados por empresa, sistema de quotas, backup/restore automatizado, inteligência artificial para personalização de mensagens e suporte a múltiplos provedores WhatsApp (WAHA e Evolution API).
 
 > 🔥 **Open Source & SaaS Ready**: Projeto totalmente gratuito com arquitetura multi-tenant pronta para comercialização. Sem ligação alguma com o WhatsApp oficial.
 
 ### ✨ Principais Diferenciais
 
 - 🏢 **Multi-Tenant (SaaS)**: Isolamento completo de dados por empresa
-- 🔌 **Múltiplos Provedores**: Integração com WAHA API, Evolution API e QuePasa
+- 🔌 **Dual Provider**: Integração com WAHA API e Evolution API
 - 🤖 **IA Integrada**: OpenAI e Groq para mensagens personalizadas
-- 💬 **Integração Chatwoot**: Importação de contatos do Chatwoot
 - 🎲 **Randomização Inteligente**: Textos, imagens, vídeos e arquivos aleatórios
 - 🔄 **Multi-Sessão com Failover**: Distribuição inteligente de envios
 - 💾 **Backup & Restore**: Sistema automatizado de backup e restauração
@@ -62,18 +61,15 @@ O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-sou
 ### 👥 **Gerenciamento de Contatos**
 - ✅ CRUD completo de contatos
 - ✅ Importação em massa via CSV
-- ✅ **Importação do Chatwoot**: Sincronização de contatos do Chatwoot
 - ✅ Sistema de categorização com tags
 - ✅ Validação de números telefônicos (formato E.164)
 - ✅ Busca avançada e filtros inteligentes
 - ✅ Paginação otimizada
 - ✅ Isolamento por tenant
-- ✅ Edição em massa de contatos
 
-### 📱 **Conexões WhatsApp (Múltiplos Provedores)**
+### 📱 **Conexões WhatsApp (Dual Provider)**
 - ✅ **WAHA API**: Suporte completo com QR Code
 - ✅ **Evolution API**: Integração nativa com Evolution
-- ✅ **QuePasa**: Integração com API QuePasa
 - ✅ Múltiplas sessões simultâneas por tenant
 - ✅ QR Code automático com expiração
 - ✅ Status em tempo real das conexões
@@ -100,6 +96,40 @@ O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-sou
 - ✅ **Arquivos Aleatórios**: Documentos variados por envio
 - ✅ **Legendas Variadas**: Textos diferentes para cada mídia
 - ✅ **Humanização**: Evita detecção de envios automatizados
+
+### ⏰ **Horários Comerciais por Campanha**
+- ✅ **Configuração Flexível**: Configure horários comerciais diferentes para cada campanha
+- ✅ **Seleção por Dia**: Horários de início e fim personalizados para cada dia da semana
+- ✅ **Intervalo de Almoço**: Opcional, pausa automática durante horário de almoço
+- ✅ **Gerenciamento de Fila**: Pausar automaticamente fora dos horários comerciais
+- ✅ **Configuração na Criação**: Defina horários durante a criação da campanha
+- ✅ **Criação Pausada**: Opção de criar campanha pausada (para iniciar manualmente depois)
+- ✅ **Próximo Horário**: Calcular automaticamente o próximo horário disponível
+- ✅ **Pausa/Retomada**: Pausar e retomar campanhas conforme necessário
+- ✅ **Presets Rápidos**: Templates prontos (Comercial 9-18, Estendido 8-18+Sábado)
+
+**Exemplo de Configuração:**
+```json
+{
+  "mondayEnabled": true,
+  "mondayStart": "09:00",
+  "mondayEnd": "18:00",
+  "mondayLunchStart": "12:00",
+  "mondayLunchEnd": "13:00",
+  "tuesdayEnabled": true,
+  "tuesdayStart": "09:00",
+  "tuesdayEnd": "18:00",
+  "tuesdayLunchStart": "12:00",
+  "tuesdayLunchEnd": "13:00",
+  "sundayEnabled": false
+}
+```
+
+**Funcionamento:**
+- Quando a campanha entra em horários comerciais configurados, as mensagens são enviadas normalmente
+- Fora dos horários, as mensagens permanecem na fila (status PENDING) aguardando o próximo período
+- Se a campanha estiver em pausa, pode ser retomada manualmente a qualquer momento
+- O sistema calcula automaticamente o próximo horário disponível para retomada
 
 ### 📊 **Relatórios e Analytics**
 - ✅ Dashboard em tempo real
@@ -175,8 +205,6 @@ O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-sou
 ### 🔌 **Integrações**
 - **WAHA API** - WhatsApp Web API
 - **Evolution API** - API alternativa para WhatsApp
-- **QuePasa** - API WhatsApp multi-dispositivo
-- **Chatwoot** - Importação de contatos e sincronização
 - **OpenAI API** - GPT para geração de conteúdo
 - **Groq API** - IA ultra-rápida
 
@@ -213,10 +241,6 @@ environment:
   - DEFAULT_WAHA_API_KEY=sua-waha-api-key
   - DEFAULT_EVOLUTION_HOST=https://seu-evolution.com
   - DEFAULT_EVOLUTION_API_KEY=sua-evolution-api-key
-  - DEFAULT_QUEPASA_HOST=https://seu-quepasa.com
-  - DEFAULT_QUEPASA_TOKEN=seu-quepasa-token
-  - DEFAULT_CHATWOOT_URL=https://seu-chatwoot.com
-  - DEFAULT_CHATWOOT_TOKEN=seu-chatwoot-token
   - DEFAULT_COMPANY_NAME=Sua Empresa
   - DEFAULT_PAGE_TITLE=Seu Sistema
 ```
@@ -258,12 +282,172 @@ npm run dev          # Servidor de desenvolvimento (porta 3000)
 1. **Acesse o sistema**: `http://localhost` ou seu domínio
 2. **Login padrão SUPERADMIN**: `superadmin@astraonline.com.br` / `Admin123`
 3. **Login padrão ADMIN**: `admin@astraonline.com.br` / `Admin123`
-4. **Configure provedores**: Vá em Configurações e adicione WAHA/Evolution/QuePasa
-5. **Configure Chatwoot** (opcional): Adicione URL e token do Chatwoot em Configurações
-6. **Crie empresas**: Como SUPERADMIN, crie novos tenants
-7. **Crie uma sessão WhatsApp**: Na página de Conexões (escolha o provedor)
-8. **Importe contatos**: Via CSV, Chatwoot ou manualmente
-9. **Crie sua primeira campanha**: Na página de Campanhas
+4. **Configure provedores**: Vá em Configurações e adicione WAHA/Evolution
+5. **Crie empresas**: Como SUPERADMIN, crie novos tenants
+3. **Crie uma sessão WhatsApp**: Na página de Conexões
+4. **Importe contatos**: Via CSV ou manualmente
+5. **Crie sua primeira campanha**: Na página de Campanhas
+
+---
+
+## 📖 Guia de Uso - Horários Comerciais
+
+### ⏰ **Como Configurar Horários Comerciais**
+
+Os horários comerciais garantem que suas campanhas sejam enviadas apenas durante os períodos que você especificar.
+
+#### **Passo 1: Criar Campanha com Horários**
+
+1. Clique em **"+ Nova Campanha"**
+2. Preencha os dados básicos (nome, contatos, tipo de mensagem)
+3. Na seção **"Quando Enviar"**, clique em **"Configurar horários comerciais"**
+4. Na modal que abrir:
+   - Escolha um **Preset Rápido** (Comercial ou Estendido) OU
+   - Configure cada dia manualmente:
+     - ✅ Marque o checkbox se o dia está disponível
+     - 🕐 Configure hora de início (ex: 09:00)
+     - 🕑 Configure hora de fim (ex: 18:00)
+     - 🍽️ Configure intervalo de almoço (opcional, ex: 12:00-13:00)
+
+#### **Passo 2: Opções de Inicialização**
+
+Após configurar os horários, escolha:
+
+- **Iniciar imediatamente**: A campanha começa assim que for criada e respeita os horários
+- **Agendar para**: Escolha data e hora específica
+- **Criar campanha pausada** (checkbox): A campanha é criada em estado PAUSED (pausa envios até você ativar manualmente)
+
+#### **Passo 3: Criar e Acompanhar**
+
+Clique em **"Criar Campanha"** - o sistema:
+- ✅ Cria a campanha
+- ✅ Salva os horários comerciais configurados
+- ✅ Inicia ou pausa conforme configurado
+- ✅ Exibe o status na lista de campanhas
+
+### 📊 **Comportamento dos Horários Comerciais**
+
+| Cenário | Comportamento |
+|---------|---------------|
+| **Durante horário comercial** | Mensagens são enviadas normalmente |
+| **Fora do horário comercial** | Mensagens ficam na fila (PENDING) e aguardam retorno ao horário |
+| **Durante almoço** | Se configurado, mensagens ficam na fila até fim do almoço |
+| **Campanha pausada** | Todas as mensagens aguardam e não são enviadas até retomada manual |
+| **Fim de expediente** | Fila é congelada, retomada no início do próximo dia útil |
+
+### 🔄 **Pausar e Retomar Campanhas**
+
+Na lista de campanhas, você pode:
+
+1. **Pausar**: Congela a fila de envios (útil se algum problema surgir)
+2. **Retomar**: Reativa o envio de mensagens pendentes
+3. **Ver próximo horário**: Ao passar o mouse sobre o status, vê quando a próxima mensagem será enviada
+
+### ⚙️ **Exemplos Práticos**
+
+#### **Exemplo 1: Comercial Padrão (9h-18h)**
+```
+Segunda a Sexta: 09:00 - 18:00 (com almoço 12:00-13:00)
+Sábado e Domingo: Desabilitados
+```
+✅ Resultado: Campanhas só enviam de seg-sex entre 9h-18h, exceto durante almoço
+
+#### **Exemplo 2: Atendimento Estendido**
+```
+Segunda a Sexta: 08:00 - 20:00 (com almoço 12:00-13:00)
+Sábado: 08:00 - 12:00
+Domingo: Desabilitado
+```
+✅ Resultado: Expediente longo entre semana + sábado matutino
+
+#### **Exemplo 3: 24/7 (Chatbot)**
+```
+Todos os dias: 00:00 - 23:59 (sem almoço)
+```
+✅ Resultado: Envio contínuo sem restrições de horário
+
+#### **Exemplo 4: Campanhas Noturnas**
+```
+Segunda a Sexta: 19:00 - 22:00 (sem almoço)
+```
+✅ Resultado: Envios apenas no período noturno
+
+---
+
+## 🔗 **API REST - Horários Comerciais**
+
+### **Endpoints**
+
+#### **Configurar Horários de uma Campanha**
+```
+PUT /api/campaigns/{id}/business-hours
+
+Body:
+{
+  "mondayEnabled": true,
+  "mondayStart": "09:00",
+  "mondayEnd": "18:00",
+  "mondayLunchStart": "12:00",
+  "mondayLunchEnd": "13:00",
+  ... (demais dias)
+}
+
+Resposta:
+{
+  "success": true,
+  "data": { ...horários salvos... }
+}
+```
+
+#### **Obter Horários de uma Campanha**
+```
+GET /api/campaigns/{id}/business-hours
+
+Resposta:
+{
+  "success": true,
+  "data": { ...horários configurados... }
+}
+```
+
+#### **Verificar Status Comercial**
+```
+GET /api/campaigns/{id}/business-hours/check
+
+Resposta:
+{
+  "success": true,
+  "data": {
+    "isWithinBusinessHours": true,
+    "nextBusinessHour": "2025-10-21T18:00:00.000Z"
+  }
+}
+```
+
+### **Criar Campanha com Horários (POST)**
+```
+POST /api/campaigns
+
+Body:
+{
+  "nome": "Campanha Exemplo",
+  "targetTags": ["clientes"],
+  "sessionNames": ["session1"],
+  "messageType": "text",
+  "messageContent": "Olá {{nome}}!",
+  "randomDelay": 30,
+  "startImmediately": true,
+  "startPaused": false,
+  "businessHours": {
+    "mondayEnabled": true,
+    "mondayStart": "09:00",
+    "mondayEnd": "18:00",
+    "mondayLunchStart": "12:00",
+    "mondayLunchEnd": "13:00",
+    ...
+  }
+}
+```
 
 ---
 
@@ -288,8 +472,6 @@ npm run dev          # Servidor de desenvolvimento (porta 3000)
 - `PUT /api/contatos/:id` - Atualizar contato
 - `DELETE /api/contatos/:id` - Excluir contato
 - `POST /api/contatos/import` - Importar CSV
-- `POST /api/chatwoot/sync-contacts` - Importar contatos do Chatwoot
-- `PATCH /api/contatos/bulk-edit` - Edição em massa de contatos
 
 #### **Campanhas**
 - `GET /api/campaigns` - Listar campanhas
@@ -300,7 +482,7 @@ npm run dev          # Servidor de desenvolvimento (porta 3000)
 
 #### **Sessões WhatsApp**
 - `GET /api/waha/sessions` - Listar sessões
-- `POST /api/waha/sessions` - Criar sessão (WAHA, Evolution ou QuePasa)
+- `POST /api/waha/sessions` - Criar sessão (WAHA ou Evolution)
 - `DELETE /api/waha/sessions/:name` - Remover sessão
 - `POST /api/waha/sessions/:name/restart` - Reiniciar
 
@@ -368,9 +550,8 @@ interface WhatsAppSession {
   name: string;
   displayName?: string;
   status: string;
-  provider: 'WAHA' | 'EVOLUTION' | 'QUEPASA';
+  provider: 'WAHA' | 'EVOLUTION';
   qr?: string;
-  quepasaToken?: string; // Token para QuePasa
 }
 ```
 
@@ -384,20 +565,10 @@ DATABASE_URL=postgresql://user:pass@host:5432/db
 REDIS_URL=redis://redis:6379
 JWT_SECRET=sua-chave-secreta-muito-segura
 JWT_EXPIRES_IN=24h
-
-# Provedores WhatsApp
 DEFAULT_WAHA_HOST=http://waha:3000
 DEFAULT_WAHA_API_KEY=sua-waha-api-key
 DEFAULT_EVOLUTION_HOST=http://evolution:8080
 DEFAULT_EVOLUTION_API_KEY=sua-evolution-api-key
-DEFAULT_QUEPASA_HOST=http://quepasa:31000
-DEFAULT_QUEPASA_TOKEN=seu-quepasa-token
-
-# Integração Chatwoot
-DEFAULT_CHATWOOT_URL=https://seu-chatwoot.com
-DEFAULT_CHATWOOT_TOKEN=seu-chatwoot-token
-
-# Configurações Gerais
 DEFAULT_COMPANY_NAME=Astra Campaign
 DEFAULT_PAGE_TITLE=Sistema de Gestão de Contatos
 ```
@@ -420,47 +591,6 @@ nome,telefone,email,categoria,observacoes
 João Silva,+5511999999999,joao@email.com,Cliente VIP,Cliente preferencial
 Maria Santos,+5511888888888,maria@email.com,Prospect,Interessada em produto X
 ```
-
-### 💬 **Integração com Chatwoot**
-
-Para importar contatos do Chatwoot:
-
-1. **Configure o Chatwoot** nas configurações do tenant:
-   - URL do Chatwoot: `https://seu-chatwoot.com`
-   - Token de API: Obtenha em Perfil → Tokens de Acesso
-
-2. **Importe os contatos**:
-   - Acesse a página de Contatos
-   - Clique em "Importar do Chatwoot"
-   - Selecione a categoria desejada
-   - Os contatos serão sincronizados automaticamente
-
-3. **Dados importados**:
-   - Nome do contato
-   - Número de telefone
-   - Email
-   - Categoria (configurável)
-
-### 🔌 **Configuração do QuePasa**
-
-Para usar o QuePasa como provedor WhatsApp:
-
-1. **Configure o QuePasa** nas configurações:
-   - Host: `https://seu-quepasa.com` ou `http://ip:31000`
-   - Token: Token de autenticação do QuePasa
-
-2. **Crie uma sessão**:
-   - Na página de Conexões WhatsApp
-   - Selecione "QuePasa" como provedor
-   - O token será gerado automaticamente
-   - Escaneie o QR Code com o WhatsApp
-
-3. **Recursos suportados**:
-   - Envio de mensagens de texto
-   - Envio de imagens com legenda
-   - Envio de vídeos com legenda
-   - Envio de documentos
-   - Status da conexão em tempo real
 
 ### 🎲 **Randomização de Conteúdo**
 
@@ -601,8 +731,6 @@ Este projeto está licenciado sob a **GNU Affero General Public License v3.0 (AG
 
 - **[WAHA](https://waha.devlike.pro/)** - API WhatsApp Web
 - **[Evolution API](https://evolution-api.com/)** - API alternativa para WhatsApp
-- **[QuePasa](https://github.com/nocodeleaks/quepasa)** - API WhatsApp multi-dispositivo
-- **[Chatwoot](https://www.chatwoot.com/)** - Plataforma de atendimento ao cliente
 - **[Prisma](https://prisma.io/)** - ORM TypeScript
 - **[Tailwind CSS](https://tailwindcss.com/)** - Framework CSS
 - **[React](https://reactjs.org/)** - Biblioteca JavaScript
@@ -635,8 +763,6 @@ Este projeto está licenciado sob a **GNU Affero General Public License v3.0 (AG
 ### 📚 **Recursos Úteis**
 - 📖 [Documentação WAHA](https://waha.devlike.pro/docs/)
 - 📖 [Documentação Evolution API](https://doc.evolution-api.com/)
-- 📖 [Documentação QuePasa](https://github.com/nocodeleaks/quepasa)
-- 📖 [Documentação Chatwoot API](https://www.chatwoot.com/developers/api/)
 - 📖 [Documentação Prisma](https://www.prisma.io/docs/)
 - 📖 [Documentação React](https://reactjs.org/docs/)
 - 📖 [Documentação Docker Swarm](https://docs.docker.com/engine/swarm/)

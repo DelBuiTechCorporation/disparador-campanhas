@@ -6,6 +6,7 @@ import { openaiService } from './openaiService';
 import { groqService } from './groqService';
 import { websocketService } from './websocketService';
 import { automationService, TriggerType } from './automationService';
+import { BusinessHoursService } from './businessHoursService';
 
 const prisma = new PrismaClient();
 
@@ -196,6 +197,32 @@ class CampaignSchedulerService {
     let selectedVariationInfo: string | null = null;
 
     try {
+      // Verificar horário comercial antes de processar a mensagem
+      const businessHours = await BusinessHoursService.getBusinessHours(campaign.id);
+      
+      if (businessHours) {
+        const isWithinBusinessHours = BusinessHoursService.isWithinBusinessHours(businessHours);
+        
+        if (!isWithinBusinessHours) {
+          const nextBusinessHour = BusinessHoursService.getNextBusinessHour(businessHours);
+          // Formatar horário local (BRT/BRST - Brasília)
+          const nextHourLocal = nextBusinessHour?.toLocaleString('pt-BR', { 
+            timeZone: 'America/Sao_Paulo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          console.log(`⏰ Fora do horário comercial. Próximo horário disponível (horário de Brasília): ${nextHourLocal}`);
+          
+          // Não processar a mensagem neste momento, deixar como PENDING para ser processada quando voltar ao horário
+          console.log(`⏸️ Pulando processamento de ${campaign.id} (fora do horário comercial)`);
+          return;
+        }
+      }
+
       // IMMEDIATELY mark message as PROCESSING to prevent duplicate processing
       console.log(`🔄 Marking message ${message.id} as PROCESSING to prevent duplication`);
       await prisma.campaignMessage.update({

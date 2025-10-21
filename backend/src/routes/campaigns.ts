@@ -9,6 +9,9 @@ import {
   getCampaignReport,
   getContactTags,
   getActiveSessions,
+  setBusinessHours,
+  getBusinessHours,
+  checkBusinessHours,
   campaignValidation
 } from '../controllers/campaignController';
 import { authMiddleware } from '../middleware/auth';
@@ -26,5 +29,10 @@ router.post('/', authMiddleware, campaignValidation, checkCampaignQuota, createC
 router.put('/:id', authMiddleware, updateCampaign);
 router.delete('/:id', authMiddleware, deleteCampaign);
 router.patch('/:id/toggle', authMiddleware, toggleCampaign);
+
+// Business hours routes
+router.put('/:id/business-hours', authMiddleware, setBusinessHours);
+router.get('/:id/business-hours', authMiddleware, getBusinessHours);
+router.get('/:id/business-hours/check', authMiddleware, checkBusinessHours);
 
 export default router;

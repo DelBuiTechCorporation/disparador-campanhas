@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { ContactService } from '../services/contactService';
 import { CategoryService } from '../services/categoryService';
+import { BusinessHoursService, BusinessHoursConfig } from '../services/businessHoursService';
 import { AuthenticatedRequest } from '../middleware/auth';
 
 const prisma = new PrismaClient();
@@ -17,6 +18,9 @@ export const campaignValidation = [
   body('randomDelay').isInt({ min: 0 }).withMessage('Delay deve ser um número positivo'),
   body('startImmediately').isBoolean().withMessage('StartImmediately deve ser boolean'),
   body('scheduledFor').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Data de agendamento deve ser válida')
+  ,
+  body('startPaused').optional().isBoolean().withMessage('startPaused deve ser boolean'),
+  body('businessHours').optional().isObject().withMessage('businessHours deve ser um objeto')
 ];
 
 // List all campaigns
@@ -155,18 +159,18 @@ export const createCampaign = async (req: AuthenticatedRequest, res: Response) =
       messageContent,
       randomDelay,
       startImmediately,
-      scheduledFor
+      scheduledFor,
+      startPaused,
+      businessHours
     } = req.body;
 
     // Verificar se todas as sessões existem e estão ativas (com tenant isolation)
+    // IMPORTANTE: Filtrar por tenantId SEMPRE, mesmo para SUPERADMIN, para isolar dados por tenant
     const sessionWhere: any = {
       name: { in: sessionNames },
-      status: 'WORKING'
+      status: 'WORKING',
+      tenantId: req.tenantId  // Sempre filtrar por tenant do usuário
     };
-
-    if (req.user?.role !== 'SUPERADMIN') {
-      sessionWhere.tenantId = req.tenantId;
-    }
 
     const sessions = await prisma.whatsAppSession.findMany({
       where: sessionWhere
@@ -202,6 +206,14 @@ export const createCampaign = async (req: AuthenticatedRequest, res: Response) =
       return res.status(400).json({ error: 'Nenhum contato encontrado com as categorias selecionadas' });
     }
 
+    // Determinar status inicial considerando startPaused
+    let initialStatus = 'PENDING';
+    if (startPaused) {
+      initialStatus = 'PAUSED';
+    } else if (startImmediately) {
+      initialStatus = 'RUNNING';
+    }
+
     // Criar campanha
     const campaign = await prisma.campaign.create({
       data: {
@@ -215,13 +227,60 @@ export const createCampaign = async (req: AuthenticatedRequest, res: Response) =
         startImmediately,
         scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
         totalContacts: filteredContacts.length,
-        status: startImmediately ? 'RUNNING' : 'PENDING',
-        startedAt: startImmediately ? new Date() : null,
+        status: initialStatus,
+        startedAt: initialStatus === 'RUNNING' ? new Date() : null,
         createdBy: req.user?.id,
         createdByName: req.user?.nome,
         tenantId: req.tenantId
       }
     });
+
+    // Se businessHours foi enviado junto com a criação, validar e salvar
+    if (businessHours) {
+      try {
+        // Validar formatos de tempo e ranges (reaproveita as validações do setBusinessHours)
+        const timeFields = [
+          'mondayStart', 'mondayEnd', 'mondayLunchStart', 'mondayLunchEnd',
+          'tuesdayStart', 'tuesdayEnd', 'tuesdayLunchStart', 'tuesdayLunchEnd',
+          'wednesdayStart', 'wednesdayEnd', 'wednesdayLunchStart', 'wednesdayLunchEnd',
+          'thursdayStart', 'thursdayEnd', 'thursdayLunchStart', 'thursdayLunchEnd',
+          'fridayStart', 'fridayEnd', 'fridayLunchStart', 'fridayLunchEnd',
+          'saturdayStart', 'saturdayEnd', 'saturdayLunchStart', 'saturdayLunchEnd',
+          'sundayStart', 'sundayEnd', 'sundayLunchStart', 'sundayLunchEnd'
+        ];
+
+        for (const field of timeFields) {
+          const value = businessHours[field as keyof BusinessHoursConfig];
+          if (value && !BusinessHoursService.isValidTimeFormat(value as string)) {
+            return res.status(400).json({ 
+              error: `Formato de horário inválido para ${field}. Use HH:MM` 
+            });
+          }
+        }
+
+        const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        for (const day of days) {
+          const enabled = businessHours[`${day}Enabled` as keyof BusinessHoursConfig];
+          if (enabled) {
+            const start = businessHours[`${day}Start` as keyof BusinessHoursConfig] as string;
+            const end = businessHours[`${day}End` as keyof BusinessHoursConfig] as string;
+            if (start && end && !BusinessHoursService.isValidTimeRange(start, end)) {
+              return res.status(400).json({ error: `Horário de fim deve ser maior que horário de início para ${day}` });
+            }
+            const lunchStart = businessHours[`${day}LunchStart` as keyof BusinessHoursConfig] as string;
+            const lunchEnd = businessHours[`${day}LunchEnd` as keyof BusinessHoursConfig] as string;
+            if (lunchStart && lunchEnd && !BusinessHoursService.isValidTimeRange(lunchStart, lunchEnd)) {
+              return res.status(400).json({ error: `Horário de fim do almoço deve ser maior que horário de início do almoço para ${day}` });
+            }
+          }
+        }
+
+        await BusinessHoursService.createOrUpdateBusinessHours(campaign.id, businessHours, req.tenantId);
+      } catch (err) {
+        console.error('Erro ao salvar businessHours durante createCampaign:', err);
+        // Não falhar a criação da campanha por conta de erro opcional de business hours, mas informar
+      }
+    }
 
     // Criar mensagens para cada contato filtrado
     const campaignMessages = filteredContacts.map((contact: any) => ({
@@ -581,6 +640,146 @@ export const getActiveSessions = async (req: AuthenticatedRequest, res: Response
     res.json(sessions);
   } catch (error) {
     console.error('Erro ao buscar sessões ativas:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+};
+
+// Create or update business hours for a campaign
+export const setBusinessHours = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const businessHoursData = req.body as BusinessHoursConfig;
+
+    // Validate campaign exists and user has access
+    const where: any = { id };
+    if (req.user?.role !== 'SUPERADMIN') {
+      where.tenantId = req.tenantId;
+    }
+
+    const campaign = await prisma.campaign.findFirst({ where });
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada' });
+    }
+
+    // Validate time formats
+    const timeFields = [
+      'mondayStart', 'mondayEnd', 'mondayLunchStart', 'mondayLunchEnd',
+      'tuesdayStart', 'tuesdayEnd', 'tuesdayLunchStart', 'tuesdayLunchEnd',
+      'wednesdayStart', 'wednesdayEnd', 'wednesdayLunchStart', 'wednesdayLunchEnd',
+      'thursdayStart', 'thursdayEnd', 'thursdayLunchStart', 'thursdayLunchEnd',
+      'fridayStart', 'fridayEnd', 'fridayLunchStart', 'fridayLunchEnd',
+      'saturdayStart', 'saturdayEnd', 'saturdayLunchStart', 'saturdayLunchEnd',
+      'sundayStart', 'sundayEnd', 'sundayLunchStart', 'sundayLunchEnd'
+    ];
+
+    for (const field of timeFields) {
+      const value = businessHoursData[field as keyof BusinessHoursConfig];
+      if (value && !BusinessHoursService.isValidTimeFormat(value as string)) {
+        return res.status(400).json({ 
+          error: `Formato de horário inválido para ${field}. Use HH:MM` 
+        });
+      }
+    }
+
+    // Validate time ranges for each day
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    for (const day of days) {
+      const enabled = businessHoursData[`${day}Enabled` as keyof BusinessHoursConfig];
+      if (enabled) {
+        const start = businessHoursData[`${day}Start` as keyof BusinessHoursConfig] as string;
+        const end = businessHoursData[`${day}End` as keyof BusinessHoursConfig] as string;
+        
+        if (start && end && !BusinessHoursService.isValidTimeRange(start, end)) {
+          return res.status(400).json({ 
+            error: `Horário de fim deve ser maior que horário de início para ${day}` 
+          });
+        }
+
+        const lunchStart = businessHoursData[`${day}LunchStart` as keyof BusinessHoursConfig] as string;
+        const lunchEnd = businessHoursData[`${day}LunchEnd` as keyof BusinessHoursConfig] as string;
+        
+        if (lunchStart && lunchEnd && !BusinessHoursService.isValidTimeRange(lunchStart, lunchEnd)) {
+          return res.status(400).json({ 
+            error: `Horário de fim do almoço deve ser maior que horário de início do almoço para ${day}` 
+          });
+        }
+      }
+    }
+
+    const businessHours = await BusinessHoursService.createOrUpdateBusinessHours(
+      id,
+      businessHoursData,
+      req.tenantId
+    );
+
+    res.json(businessHours);
+  } catch (error) {
+    console.error('Erro ao configurar horários comerciais:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+};
+
+// Get business hours for a campaign
+export const getBusinessHours = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Validate campaign exists and user has access
+    const where: any = { id };
+    if (req.user?.role !== 'SUPERADMIN') {
+      where.tenantId = req.tenantId;
+    }
+
+    const campaign = await prisma.campaign.findFirst({ where });
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada' });
+    }
+
+    const businessHours = await BusinessHoursService.getBusinessHours(id);
+    
+    res.json(businessHours || {});
+  } catch (error) {
+    console.error('Erro ao buscar horários comerciais:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+};
+
+// Check if current time is within business hours
+export const checkBusinessHours = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Validate campaign exists and user has access
+    const where: any = { id };
+    if (req.user?.role !== 'SUPERADMIN') {
+      where.tenantId = req.tenantId;
+    }
+
+    const campaign = await prisma.campaign.findFirst({ where });
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada' });
+    }
+
+    const businessHours = await BusinessHoursService.getBusinessHours(id);
+    
+    if (!businessHours) {
+      return res.json({ 
+        isWithinBusinessHours: true, // Se não tem configuração, assume que pode enviar
+        nextBusinessHour: null
+      });
+    }
+
+    const now = new Date();
+    const isWithinBusinessHours = BusinessHoursService.isWithinBusinessHours(businessHours, now);
+    const nextBusinessHour = isWithinBusinessHours ? null : BusinessHoursService.getNextBusinessHour(businessHours, now);
+
+    res.json({
+      isWithinBusinessHours,
+      nextBusinessHour,
+      currentTime: now.toISOString()
+    });
+  } catch (error) {
+    console.error('Erro ao verificar horários comerciais:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 };

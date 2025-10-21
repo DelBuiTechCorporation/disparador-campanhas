@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Header } from '../components/Header';
+import { BusinessHoursModal } from '../components/BusinessHoursModal';
 
 type MessageContent =
   | { text: string }
@@ -51,6 +52,20 @@ interface ContactTag {
   nome: string;
 }
 
+interface CampaignFormData {
+  nome: string;
+  targetTags: string[];
+  sessionNames: string[];
+  sessionName: string;
+  messageType: string;
+  messageContent: MessageContent;
+  randomDelay: number;
+  startImmediately: boolean;
+  scheduledFor: string;
+  businessHours?: any;
+  startPaused?: boolean;
+}
+
 export function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,9 +82,13 @@ export function CampaignsPage() {
   const [whatsappSessions, setWhatsappSessions] = useState<WhatsAppSession[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<{ [key: number]: boolean }>({});
   const [fileInfos, setFileInfos] = useState<{ [key: number]: { name: string, size: number, type: string } }>({});
+  
+  // Business Hours Modal states
+  const [showBusinessHoursModal, setShowBusinessHoursModal] = useState(false);
+  const [selectedCampaignForBusinessHours, setSelectedCampaignForBusinessHours] = useState<{id: string, name: string} | null>(null);
 
   // Form states
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<CampaignFormData>({
     nome: '',
     targetTags: [] as string[],
     sessionNames: [] as string[],
@@ -78,7 +97,11 @@ export function CampaignsPage() {
     messageContent: { sequence: [] as Array<{ type: string; content: any }> } as MessageContent,
     randomDelay: 30,
     startImmediately: true,
-    scheduledFor: ''
+    scheduledFor: '',
+    // Business hours config set during creation
+    businessHours: {} as any,
+    // If true, campaign will be created in PAUSED state
+    startPaused: false
   });
 
   useEffect(() => {
@@ -206,6 +229,10 @@ export function CampaignsPage() {
         messageContent: finalMessageContent,
         scheduledFor: formData.startImmediately ? null : formData.scheduledFor || null
       };
+
+      // Ensure businessHours and startPaused are explicitly included
+      (campaignData as any).businessHours = (formData as any).businessHours || {};
+      (campaignData as any).startPaused = (formData as any).startPaused || false;
 
       const response = await authenticatedFetch('/api/campaigns', {
         method: 'POST',
@@ -387,6 +414,23 @@ export function CampaignsPage() {
     if (type.startsWith('video/')) return '🎥';
     if (type.startsWith('audio/')) return '🎵';
     return '📄';
+  };
+
+  const handleOpenBusinessHours = (campaignId: string, campaignName: string) => {
+    // During creation, open modal in 'creation' mode: we store config in formData.businessHours
+    if (showCreateModal) {
+      setShowBusinessHoursModal(true);
+      setSelectedCampaignForBusinessHours(null);
+      return;
+    }
+
+    setSelectedCampaignForBusinessHours({ id: campaignId, name: campaignName });
+    setShowBusinessHoursModal(true);
+  };
+
+  const handleCloseBusinessHours = () => {
+    setShowBusinessHoursModal(false);
+    setSelectedCampaignForBusinessHours(null);
   };
 
   const handleToggleCampaign = async (campaignId: string, action: 'pause' | 'resume') => {
@@ -704,6 +748,15 @@ export function CampaignsPage() {
                           <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
                         </svg>
                       </button>
+                      <button
+                        onClick={() => handleOpenBusinessHours(campaign.id, campaign.nome)}
+                        className="px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700"
+                        title="Configurar horários comerciais"
+                      >
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                        </svg>
+                      </button>
                       {campaign.status === 'RUNNING' && (
                         <button
                           onClick={() => handleToggleCampaign(campaign.id, 'pause')}
@@ -926,6 +979,30 @@ export function CampaignsPage() {
                         )}
                       </div>
                     </div>
+                      {/* Horários Comerciais e opção de criar pausada */}
+                      <div className="mt-4 border-t pt-4 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // abrir modal para configurar horários durante criação
+                            setSelectedCampaignForBusinessHours(null);
+                            setShowBusinessHoursModal(true);
+                          }}
+                          className="px-3 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
+                        >
+                          Configurar horários comerciais
+                        </button>
+
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={(formData as any).startPaused}
+                            onChange={(e) => setFormData(prev => ({ ...prev, startPaused: e.target.checked }))}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">Criar campanha pausada (pausa envios)</span>
+                        </label>
+                      </div>
                   </div>
 
                   {/* COLUNA DIREITA - Mensagens */}
@@ -2287,6 +2364,21 @@ export function CampaignsPage() {
               </div>
             </div>
           </div>
+        )}
+        
+        {/* Modal de Horários Comerciais (criação ou edição) */}
+        {showBusinessHoursModal && (
+          <BusinessHoursModal
+            isOpen={showBusinessHoursModal}
+            onClose={handleCloseBusinessHours}
+            campaignId={selectedCampaignForBusinessHours ? selectedCampaignForBusinessHours.id : undefined}
+            campaignName={selectedCampaignForBusinessHours ? selectedCampaignForBusinessHours.name : undefined}
+            onSaveLocal={
+              !selectedCampaignForBusinessHours
+                ? (config) => setFormData((prev: CampaignFormData) => ({ ...prev, businessHours: config }))
+                : undefined
+            }
+          />
         )}
       </div>
     </>
