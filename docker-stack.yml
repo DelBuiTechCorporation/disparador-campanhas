@@ -33,7 +33,7 @@ services:
         condition: on-failure
 
   backend:
-    image: astraonline/astracampaignbackend:0.0.2
+    image: work-backend:v0.0.2-20251020c
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/contacts?schema=public
       REDIS_URL: redis://redis:6379
@@ -48,7 +48,7 @@ services:
       DEFAULT_EVOLUTION_API_KEY: ""
       DEFAULT_COMPANY_NAME: ""
       DEFAULT_PAGE_TITLE: "Sistema de Gestão de Contatos"
-      ALLOWED_ORIGINS: https://disparador.seudominio.com.br,http://disparador.seudominio.com.br,http://work_frontend,http://work_frontend:80
+      ALLOWED_ORIGINS: https://work.trecofantastico.com.br,http://work.trecofantastico.com.br,http://work_frontend,http://work_frontend:80
     networks:
       - network_public
     depends_on:
@@ -70,14 +70,14 @@ services:
       labels:
         - traefik.enable=true
         - traefik.docker.network=network_public
-        - traefik.http.routers.work-backend.rule=Host(`disparador.seudominio.com.br`) && PathPrefix(`/api`)
+        - traefik.http.routers.work-backend.rule=Host(`work.trecofantastico.com.br`) && PathPrefix(`/api`)
         - traefik.http.routers.work-backend.entrypoints=web,websecure
         - traefik.http.routers.work-backend.tls=true
         - traefik.http.routers.work-backend.tls.certresolver=letsencryptresolver
         - traefik.http.services.work-backend.loadbalancer.server.port=3001
 
   frontend:
-    image: astraonline/astracampaignfrontend:0.0.3
+    image: work-frontend:v0.0.2-20251020a
     networks:
       - network_public
     depends_on:
@@ -92,7 +92,7 @@ services:
       labels:
         - traefik.enable=true
         - traefik.docker.network=network_public
-        - traefik.http.routers.work-frontend.rule=Host(`disparador.seudominio.com.br`)
+        - traefik.http.routers.work-frontend.rule=Host(`work.trecofantastico.com.br`)
         - traefik.http.routers.work-frontend.entrypoints=web,websecure
         - traefik.http.routers.work-frontend.tls=true
         - traefik.http.routers.work-frontend.tls.certresolver=letsencryptresolver

@@ -13,13 +13,33 @@ interface Settings {
   atualizadoEm: string;
 }
 
-export function useSettings() {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// Cache global das configurações (compartilhado entre todas as instâncias do hook)
+let cachedSettings: Settings | null = null;
+let cachedError: string | null = null;
+let loadingPromise: Promise<void> | null = null;
 
-  const loadSettings = async () => {
+export function useSettings() {
+  const [settings, setSettings] = useState<Settings | null>(cachedSettings);
+  const [loading, setLoading] = useState(!cachedSettings);
+  const [error, setError] = useState<string | null>(cachedError);
+
+  const loadSettings = async (forceRefresh = false) => {
     try {
+      // Se já existe um cache e não é force refresh, usar o cache
+      if (cachedSettings && !forceRefresh) {
+        setSettings(cachedSettings);
+        setLoading(false);
+        return;
+      }
+
+      // Se já está carregando, aguardar a promise existente
+      if (loadingPromise && !forceRefresh) {
+        await loadingPromise;
+        setSettings(cachedSettings);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       const token = localStorage.getItem('auth_token');
 
@@ -35,18 +55,31 @@ export function useSettings() {
 
       (headers as Record<string, string>).Authorization = `Bearer ${token}`;
 
-      const response = await fetch('/api/settings', { headers });
-      if (response.ok) {
-        const data = await response.json();
-        setSettings(data);
-      } else {
-        setError('Erro ao carregar configurações');
-      }
+      // Criar promise de loading para outras instâncias aguardarem
+      loadingPromise = (async () => {
+        const response = await fetch('/api/settings', { headers });
+        if (response.ok) {
+          const data = await response.json();
+          cachedSettings = data;
+          cachedError = null;
+          setSettings(data);
+          setError(null);
+        } else {
+          const errorMsg = 'Erro ao carregar configurações';
+          cachedError = errorMsg;
+          setError(errorMsg);
+        }
+      })();
+
+      await loadingPromise;
     } catch (err) {
       console.error('Erro ao carregar configurações:', err);
-      setError('Erro ao carregar configurações');
+      const errorMsg = 'Erro ao carregar configurações';
+      cachedError = errorMsg;
+      setError(errorMsg);
     } finally {
       setLoading(false);
+      loadingPromise = null;
     }
   };
 
@@ -58,6 +91,6 @@ export function useSettings() {
     settings,
     loading,
     error,
-    refetch: loadSettings
+    refetch: () => loadSettings(true) // Force refresh quando chamado manualmente
   };
 }

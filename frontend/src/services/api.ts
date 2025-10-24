@@ -176,6 +176,27 @@ class ApiService {
 
     return response.blob();
   }
+
+  // Bulk operations
+  async post(endpoint: string, data: any): Promise<any> {
+    return this.request(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Chatwoot integration
+  async getChatwootTags(): Promise<{ tags: Array<{ name: string; count: number }> }> {
+    return this.request('/chatwoot/tags');
+  }
+
+  async syncChatwootContacts(tagMappings: Array<{ chatwootTag: string; categoryId: string }>): Promise<{ imported: number; updated: number }> {
+    return this.request('/chatwoot/sync', {
+      method: 'POST',
+      body: JSON.stringify({ tagMappings }),
+    });
+  }
 }
 
 export const apiService = new ApiService();
+export const api = apiService;

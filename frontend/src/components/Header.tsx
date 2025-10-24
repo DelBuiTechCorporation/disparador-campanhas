@@ -9,7 +9,7 @@ interface HeaderProps {
 }
 
 export function Header({ title, subtitle, actions }: HeaderProps) {
-  const { settings } = useSettings();
+  const { settings, loading } = useSettings();
   const { user } = useAuth();
 
   const getUserRoleText = (role: string) => {
@@ -30,11 +30,16 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
         <div className="flex items-center space-x-4">
           {/* Logo da empresa no header */}
           <div className="flex items-center space-x-3">
-            <img
-              src={settings?.logoUrl || '/assets/default-logo.png'}
-              alt={settings?.companyName || 'Astra Online'}
-              className="h-8 w-auto object-contain"
-            />
+            {!loading && (
+              <img
+                src={settings?.logoUrl || '/assets/default-logo.png'}
+                alt={settings?.companyName || 'Astra Online'}
+                className="h-8 w-auto object-contain"
+              />
+            )}
+            {loading && (
+              <div className="h-8 w-24 bg-gray-200 animate-pulse rounded"></div>
+            )}
             <div className="border-l border-gray-300 pl-3">
               <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
               {subtitle && (

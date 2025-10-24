@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 export function Navigation() {
   const location = useLocation();
-  const { settings } = useSettings();
+  const { settings, loading } = useSettings();
   const { user, logout } = useAuth();
 
   const menuItems = [
@@ -72,7 +72,9 @@ export function Navigation() {
         {/* Ícone */}
         <div className="mb-8 flex items-center justify-center">
           <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center backdrop-blur-sm">
-            {settings?.iconUrl ? (
+            {loading ? (
+              <div className="h-8 w-8 bg-white/20 animate-pulse rounded"></div>
+            ) : settings?.iconUrl ? (
               <img
                 src={settings.iconUrl}
                 alt={settings?.companyName || 'Sistema'}

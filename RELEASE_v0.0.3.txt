@@ -1,0 +1,52 @@
+🚀 ASTRA CAMPAIGN v0.0.3 - Nova Versão Disponível!
+
+Estamos felizes em anunciar a versão 0.0.3 do Astra Campaign com importantes melhorias e novas integrações!
+
+═══════════════════════════════════════════════════════════
+
+📋 RELEASE NOTES v0.0.3
+
+🔧 AJUSTES E CORREÇÕES:
+
+✅ Ajuste do item categorias dentro das campanhas para aparecer de acordo com o tenant
+✅ Ajustes de pop-ups para se ajustar às telas
+✅ Ajuste de default da logo
+✅ Ajuste na importação de contatos em massa para respeitar o ID da categoria
+✅ Ajuste no download relatório das campanhas
+✅ Ajuste no agendamento de campanhas, para respeitar o dia e hora definido
+
+🎉 NOVAS FEATURES:
+
+⚡ Edição em massa de contatos
+🔍 Filtro em contatos
+✨ Seletor em massa no pop-up de campanhas para categorias e conexões
+📱 Integração com API QuePasa para disparos de campanhas
+🏷️ Integração com Tags do Chatwoot - permite importar contatos por tags
+
+═══════════════════════════════════════════════════════════
+
+📦 COMO ATUALIZAR:
+
+1. Edite seu arquivo docker-stack.yml
+
+2. Atualize as tags das imagens:
+
+   Frontend:
+   image: astraonline/astracampaignfrontend:0.0.4
+
+   Backend:
+   image: astraonline/astracampaignbackend:0.0.3
+
+3. Execute o comando de atualização:
+   docker stack deploy -c docker-stack.yml astracampaign
+
+4. Aguarde alguns instantes para o deploy ser concluído!
+
+═══════════════════════════════════════════════════════════
+
+📖 CHANGELOG COMPLETO:
+https://github.com/AstraOnlineWeb/astracampaign/releases/tag/v0.0.3
+
+═══════════════════════════════════════════════════════════
+
+Aproveite as novas funcionalidades! 🎊

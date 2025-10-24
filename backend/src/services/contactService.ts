@@ -89,10 +89,11 @@ export class ContactService {
     search?: string,
     page: number = 1,
     pageSize: number = 30,
-    tenantId?: string
+    tenantId?: string,
+    tag?: string
   ): Promise<ContactsResponse> {
     try {
-      console.log('📋 ContactService.getContacts - tenantId:', tenantId);
+      console.log('📋 ContactService.getContacts - tenantId:', tenantId, 'tag:', tag);
 
       // Construir filtros dinâmicos
       const where: any = {};
@@ -100,6 +101,11 @@ export class ContactService {
       // Filtro por tenant (SUPERADMIN vê todos se tenantId for undefined)
       if (tenantId) {
         where.tenantId = tenantId;
+      }
+
+      // Filtro por categoria/tag
+      if (tag) {
+        where.categoriaId = tag;
       }
 
       // Filtro de busca
@@ -257,6 +263,87 @@ export class ContactService {
       console.log('✅ ContactService.deleteContact - contato excluído:', id);
     } catch (error) {
       console.error('❌ ContactService.deleteContact - erro:', error);
+      throw error;
+    }
+  }
+
+  static async bulkUpdateContacts(contactIds: string[], updates: any, tenantId?: string) {
+    try {
+      console.log('📝 ContactService.bulkUpdateContacts - IDs:', contactIds.length);
+
+      // Construir where clause com tenant isolation
+      const where: any = {
+        id: { in: contactIds }
+      };
+      if (tenantId) {
+        where.tenantId = tenantId;
+      }
+
+      // Verificar quantos contatos existem e pertencem ao tenant
+      const existingContacts = await prisma.contact.count({ where });
+      if (existingContacts === 0) {
+        throw new Error('Nenhum contato encontrado para atualizar');
+      }
+
+      // Preparar dados de atualização
+      const updateData: any = {};
+      if (updates.categoriaId !== undefined) {
+        updateData.categoriaId = updates.categoriaId;
+      }
+      if (updates.tags !== undefined) {
+        updateData.tags = updates.tags;
+      }
+      if (updates.observacoes !== undefined) {
+        updateData.observacoes = updates.observacoes;
+      }
+
+      // Atualizar contatos
+      const result = await prisma.contact.updateMany({
+        where,
+        data: updateData
+      });
+
+      console.log('✅ ContactService.bulkUpdateContacts - contatos atualizados:', result.count);
+      return {
+        message: `${result.count} contato(s) atualizado(s) com sucesso`,
+        count: result.count
+      };
+    } catch (error) {
+      console.error('❌ ContactService.bulkUpdateContacts - erro:', error);
+      throw error;
+    }
+  }
+
+  static async bulkDeleteContacts(contactIds: string[], tenantId?: string) {
+    try {
+      console.log('🗑️ ContactService.bulkDeleteContacts - IDs:', contactIds.length);
+
+      // Construir where clause com tenant isolation
+      const where: any = {
+        id: { in: contactIds }
+      };
+      if (tenantId) {
+        where.tenantId = tenantId;
+      }
+
+      // Verificar quantos contatos existem e pertencem ao tenant
+      const existingContacts = await prisma.contact.count({ where });
+      if (existingContacts === 0) {
+        throw new Error('Nenhum contato encontrado para excluir');
+      }
+
+      // Excluir contatos
+      const result = await prisma.contact.deleteMany({
+        where
+      });
+
+      console.log('✅ ContactService.bulkDeleteContacts - contatos excluídos:', result.count);
+      return {
+        message: `${result.count} contato(s) excluído(s) com sucesso`,
+        count: result.count
+      };
+    } catch (error) {
+      console.error('❌ ContactService.bulkDeleteContacts - erro:', error);
       throw error;
     }
   }

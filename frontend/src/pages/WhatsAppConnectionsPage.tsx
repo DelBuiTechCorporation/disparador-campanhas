@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Header } from '../components/Header';
+import { Portal } from '../components/Portal';
 import { useSettings } from '../hooks/useSettings';
 import { useTenant } from '../contexts/TenantContext';
 
@@ -45,7 +46,7 @@ interface WhatsAppSession {
   name: string; // Nome real usado na API (ex: vendas_c52982e8)
   displayName?: string; // Nome exibido ao usuário (ex: vendas)
   status: 'WORKING' | 'SCAN_QR_CODE' | 'STOPPED' | 'FAILED';
-  provider: 'WAHA' | 'EVOLUTION';
+  provider: 'WAHA' | 'EVOLUTION' | 'QUEPASA';
   qr?: string;
   qrExpiresAt?: Date;
   me?: {
@@ -61,12 +62,27 @@ export function WhatsAppConnectionsPage() {
   const [sessions, setSessions] = useState<WhatsAppSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [newSessionName, setNewSessionName] = useState('');
-  const [newSessionProvider, setNewSessionProvider] = useState<'WAHA' | 'EVOLUTION'>('WAHA');
+  const [newSessionProvider, setNewSessionProvider] = useState<'WAHA' | 'EVOLUTION' | 'QUEPASA'>('WAHA');
   const [isCreating, setIsCreating] = useState(false);
   const [loadingQR, setLoadingQR] = useState<string | null>(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [currentQRSession, setCurrentQRSession] = useState<WhatsAppSession | null>(null);
   const [createSessionModalOpen, setCreateSessionModalOpen] = useState(false);
+  const [providerDropdownOpen, setProviderDropdownOpen] = useState(false);
+
+  // Preload das imagens dos provedores para carregamento instantâneo
+  useEffect(() => {
+    const images = [
+      '/iconewaha.png',
+      '/iconeevolutionapi.png',
+      '/iconequepasa.png'
+    ];
+
+    images.forEach(src => {
+      const img = new Image();
+      img.src = src;
+    });
+  }, []);
 
   // Helper para fazer requisições autenticadas
   const authenticatedFetch = async (url: string, options: RequestInit = {}) => {
@@ -126,17 +142,26 @@ export function WhatsAppConnectionsPage() {
           const updatedSession = sessions.find((s: any) => s.name === currentQRSession.name);
 
           if (updatedSession) {
+            console.log(`🔍 Polling - sessão ${currentQRSession.name}:`, {
+              provider: updatedSession.provider,
+              status: updatedSession.status,
+              me: updatedSession.me
+            });
+
             // Se a sessão mudou para WORKING (conectada)
-            if (updatedSession.status === 'WORKING' && updatedSession.me) {
+            if (updatedSession.status === 'WORKING') {
+              console.log(`✅ Sessão ${currentQRSession.name} conectada! Fechando modal...`);
+
               // Fechar modal
               setQrModalOpen(false);
               setCurrentQRSession(null);
 
-              // Atualizar lista de sessões
-              loadSessions(false);
+              // Atualizar lista de sessões imediatamente
+              await loadSessions(false);
 
               // Mostrar notificação de sucesso
-              toast.success(`WhatsApp conectado com sucesso! Logado como: ${updatedSession.me.pushName}`);
+              const userName = updatedSession.me?.pushName || 'Usuário';
+              toast.success(`WhatsApp conectado com sucesso! Logado como: ${userName}`);
             }
           }
         }
@@ -148,8 +173,8 @@ export function WhatsAppConnectionsPage() {
     // Verificar imediatamente
     checkConnection();
 
-    // Depois verificar a cada 5 segundos
-    const interval = setInterval(checkConnection, 5000);
+    // Depois verificar a cada 2 segundos (polling mais frequente)
+    const interval = setInterval(checkConnection, 2000);
 
     return () => {
       clearInterval(interval);
@@ -172,6 +197,7 @@ export function WhatsAppConnectionsPage() {
       // Processar dados das sessões incluindo QR code salvo no banco
       const processedSessions = data.map((session: any) => ({
         name: session.name,
+        displayName: session.displayName || session.name,
         status: session.status || 'STOPPED',
         provider: session.provider || 'WAHA',
         me: session.me || null,
@@ -209,6 +235,11 @@ export function WhatsAppConnectionsPage() {
       return;
     }
 
+    if (newSessionProvider === 'QUEPASA' && (!settings?.quepasaUrl || !settings?.quepasaLogin || !settings?.quepasaPassword)) {
+      toast.error('Configure as credenciais Quepasa nas configurações do sistema');
+      return;
+    }
+
     setIsCreating(true);
     try {
       const response = await authenticatedFetch('/api/waha/sessions', {
@@ -234,12 +265,27 @@ export function WhatsAppConnectionsPage() {
         throw new Error(errorData.error || errorData.message || `HTTP ${response.status}`);
       }
 
+      const createdSessionData = await response.json();
+
       toast.success(`Sessão ${newSessionProvider} criada com sucesso`);
       setNewSessionName('');
       setNewSessionProvider('WAHA');
 
       // Recarregar imediatamente
       await loadSessions();
+
+      // Se for Evolution e veio QR code, abrir modal automaticamente
+      if (newSessionProvider === 'EVOLUTION' && createdSessionData.qrcode?.base64) {
+        setTimeout(async () => {
+          // Buscar o nome real da sessão criada
+          const sessions = await authenticatedFetch('/api/waha/sessions').then(r => r.json());
+          const createdSession = sessions.find((s: any) => s.name.startsWith(newSessionName.trim()));
+
+          if (createdSession) {
+            await openQRModal(createdSession.name);
+          }
+        }, 1000);
+      }
 
       // Aguardar mais um pouco e recarregar novamente para pegar status atualizado
       setTimeout(() => {
@@ -491,8 +537,23 @@ export function WhatsAppConnectionsPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h4 className="text-lg font-medium text-gray-900">{session.displayName || session.name}</h4>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${session.provider === 'EVOLUTION' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
-                        {session.provider === 'EVOLUTION' ? '🚀 Evolution' : '🔗 WAHA'}
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        session.provider === 'EVOLUTION' ? 'bg-blue-100 text-blue-800' :
+                        session.provider === 'QUEPASA' ? 'bg-purple-100 text-purple-800' :
+                        'bg-green-100 text-green-800'
+                      }`}>
+                        <img
+                          src={
+                            session.provider === 'EVOLUTION' ? '/iconeevolutionapi.png' :
+                            session.provider === 'QUEPASA' ? '/iconequepasa.png' :
+                            '/iconewaha.png'
+                          }
+                          alt={session.provider}
+                          className="w-4 h-4 object-contain"
+                        />
+                        {session.provider === 'EVOLUTION' ? 'Evolution API' :
+                         session.provider === 'QUEPASA' ? 'Quepasa' :
+                         'Waha'}
                       </span>
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(session.status)}`}>
                         {getStatusText(session.status)}
@@ -547,8 +608,9 @@ export function WhatsAppConnectionsPage() {
 
       {/* Modal Criar Sessão */}
       {createSessionModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md border border-gray-100" role="dialog" aria-labelledby="create-session-title">
+        <Portal>
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center backdrop-blur-sm" style={{ zIndex: 9999 }}>
+            <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md border border-gray-100 m-4" role="dialog" aria-labelledby="create-session-title">
             <div className="text-center mb-8">
               <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl mx-auto mb-4 flex items-center justify-center">
                 <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -568,16 +630,82 @@ export function WhatsAppConnectionsPage() {
                 <label htmlFor="session-provider" className="block text-sm font-semibold text-gray-700 mb-2">
                   Provedor WhatsApp *
                 </label>
-                <select
-                  id="session-provider"
-                  value={newSessionProvider}
-                  onChange={(e) => setNewSessionProvider(e.target.value as 'WAHA' | 'EVOLUTION')}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                  disabled={isCreating}
-                >
-                  <option value="WAHA">🔗 WAHA - WhatsApp HTTP API</option>
-                  <option value="EVOLUTION">🚀 Evolution API</option>
-                </select>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => !isCreating && setProviderDropdownOpen(!providerDropdownOpen)}
+                    className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm bg-white text-left flex items-center justify-between"
+                    disabled={isCreating}
+                  >
+                    <span className="flex items-center gap-3">
+                      <img
+                        src={
+                          newSessionProvider === 'EVOLUTION' ? '/iconeevolutionapi.png' :
+                          newSessionProvider === 'QUEPASA' ? '/iconequepasa.png' :
+                          '/iconewaha.png'
+                        }
+                        alt={newSessionProvider}
+                        className="w-5 h-5 object-contain"
+                      />
+                      {newSessionProvider === 'EVOLUTION' ? 'Evolution API' :
+                       newSessionProvider === 'QUEPASA' ? 'Quepasa' :
+                       'Waha'}
+                    </span>
+                    <svg className={`w-4 h-4 text-gray-400 transition-transform ${providerDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {providerDropdownOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setProviderDropdownOpen(false)}
+                      />
+                      <div className="absolute z-20 w-full mt-2 bg-white border border-gray-300 rounded-xl shadow-lg overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewSessionProvider('WAHA');
+                            setProviderDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-blue-50 transition-colors ${
+                            newSessionProvider === 'WAHA' ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <img src="/iconewaha.png" alt="Waha" className="w-5 h-5 object-contain" />
+                          <span className="text-sm">Waha</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewSessionProvider('EVOLUTION');
+                            setProviderDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-blue-50 transition-colors ${
+                            newSessionProvider === 'EVOLUTION' ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <img src="/iconeevolutionapi.png" alt="Evolution API" className="w-5 h-5 object-contain" />
+                          <span className="text-sm">Evolution API</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewSessionProvider('QUEPASA');
+                            setProviderDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-blue-50 transition-colors ${
+                            newSessionProvider === 'QUEPASA' ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <img src="/iconequepasa.png" alt="Quepasa" className="w-5 h-5 object-contain" />
+                          <span className="text-sm">Quepasa</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <p className="text-xs text-gray-500 mt-2">
                   Escolha o provedor para conectar ao WhatsApp
                 </p>
@@ -639,21 +767,14 @@ export function WhatsAppConnectionsPage() {
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        </Portal>
       )}
 
       {/* Modal do QR Code */}
-      {qrModalOpen && currentQRSession && (() => {
-        console.log('🎨 Renderizando modal QR:', {
-          qrModalOpen,
-          hasCurrentQRSession: !!currentQRSession,
-          currentQRSessionName: currentQRSession?.name,
-          hasQR: !!currentQRSession?.qr,
-          qrLength: currentQRSession?.qr?.length
-        });
-        return (
-          <div className="qr-modal-overlay">
-            <div className="qr-modal-content bg-white rounded-lg shadow-xl">
+      {qrModalOpen && currentQRSession && (
+        <div className="qr-modal-overlay" onClick={closeQRModal}>
+          <div className="qr-modal-content bg-white rounded-lg shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center p-6 border-b">
               <h3 className="text-lg font-medium text-gray-900">
                 QR Code - {currentQRSession.displayName || currentQRSession.name} ({currentQRSession.provider})
@@ -684,6 +805,20 @@ export function WhatsAppConnectionsPage() {
                             src={currentQRSession.qr}
                             alt="QR Code WhatsApp"
                             className="w-64 h-64 mx-auto block border-2 border-gray-200 rounded"
+                          />
+                        );
+                      }
+
+                      // Para Quepasa: QR vem em base64
+                      if (currentQRSession.provider === 'QUEPASA' && currentQRSession.qr?.startsWith('data:image')) {
+                        return (
+                          <img
+                            src={currentQRSession.qr}
+                            alt="QR Code WhatsApp"
+                            className="w-64 h-64 mx-auto block border-2 border-gray-200 rounded"
+                            onError={(e) => {
+                              console.error('Erro ao carregar QR Quepasa base64');
+                            }}
                           />
                         );
                       }
@@ -732,7 +867,6 @@ export function WhatsAppConnectionsPage() {
                   <p className="text-sm text-gray-500 mt-2">Aguarde um momento</p>
                 </div>
               )}
-
             </div>
 
             <div className="flex justify-end gap-3 p-6 border-t">
@@ -751,8 +885,7 @@ export function WhatsAppConnectionsPage() {
             </div>
           </div>
         </div>
-        );
-      })()}
+      )}
       </div>
     </>
   );

@@ -18,25 +18,6 @@ export class TenantSettingsService {
 
       if (!settings) {
         console.log('⚠️ TenantSettings não encontrado, criando novo para tenantId:', tenantId);
-        
-        // Validar se o tenant existe antes de criar TenantSettings
-        const tenantExists = await prisma.tenant.findUnique({
-          where: { id: tenantId }
-        });
-
-        if (!tenantExists) {
-          console.error('❌ Tenant não existe:', tenantId);
-          // Retornar um objeto padrão vazio em vez de falhar
-          return {
-            tenantId,
-            openaiApiKey: null,
-            groqApiKey: null,
-            customBranding: null,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          };
-        }
-
         settings = await prisma.tenantSettings.create({
           data: {
             tenantId,
@@ -50,15 +31,7 @@ export class TenantSettingsService {
       return settings;
     } catch (error) {
       console.error('❌ Error getting tenant settings for tenantId:', tenantId, 'error:', error);
-      // Retornar um objeto padrão em vez de lançar erro
-      return {
-        tenantId,
-        openaiApiKey: null,
-        groqApiKey: null,
-        customBranding: null,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+      throw error;
     }
   }
 
@@ -66,6 +39,9 @@ export class TenantSettingsService {
     openaiApiKey?: string | null;
     groqApiKey?: string | null;
     customBranding?: any;
+    chatwootUrl?: string | null;
+    chatwootAccountId?: string | null;
+    chatwootApiToken?: string | null;
   }) {
     try {
       const settings = await prisma.tenantSettings.upsert({
@@ -73,13 +49,19 @@ export class TenantSettingsService {
         update: {
           openaiApiKey: data.openaiApiKey !== undefined ? data.openaiApiKey : undefined,
           groqApiKey: data.groqApiKey !== undefined ? data.groqApiKey : undefined,
-          customBranding: data.customBranding !== undefined ? data.customBranding : undefined
+          customBranding: data.customBranding !== undefined ? data.customBranding : undefined,
+          chatwootUrl: data.chatwootUrl !== undefined ? data.chatwootUrl : undefined,
+          chatwootAccountId: data.chatwootAccountId !== undefined ? data.chatwootAccountId : undefined,
+          chatwootApiToken: data.chatwootApiToken !== undefined ? data.chatwootApiToken : undefined
         },
         create: {
           tenantId,
           openaiApiKey: data.openaiApiKey || null,
           groqApiKey: data.groqApiKey || null,
-          customBranding: data.customBranding || undefined
+          customBranding: data.customBranding || undefined,
+          chatwootUrl: data.chatwootUrl || null,
+          chatwootAccountId: data.chatwootAccountId || null,
+          chatwootApiToken: data.chatwootApiToken || null
         }
       });
 

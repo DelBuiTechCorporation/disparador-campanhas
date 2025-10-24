@@ -82,10 +82,10 @@ export class CSVImportController {
     try {
       // CSV template com cabeçalhos em português
       const csvTemplate = `nome,telefone,email,observacoes,categoriaId
-João Silva,+5511999999999,joao@email.com,Cliente desde 2020,1
-Maria Santos,+5511888888888,maria@email.com,Fornecedor de materiais,2
+João Silva,+5511999999999,joao@email.com,Cliente desde 2020,550e8400-e29b-41d4-a716-446655440000
+Maria Santos,+5511888888888,maria@email.com,Fornecedor de materiais,550e8400-e29b-41d4-a716-446655440001
 Pedro Oliveira,+5511777777777,pedro@email.com,,
-Ana Costa,+5511666666666,ana@email.com,Parceiro estratégico,`;
+Ana Costa,+5511666666666,ana@email.com,Parceiro estratégico,550e8400-e29b-41d4-a716-446655440000`;
 
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="template-contatos.csv"');

@@ -9,6 +9,7 @@ interface CSVRow {
   email?: string;
   observacoes?: string;
   tags?: string;
+  categoriaid?: string; // CSV parser converte para lowercase
 }
 
 export class CSVImportService {
@@ -53,10 +54,12 @@ export class CSVImportService {
                 email: row.email?.trim() || undefined,
                 observacoes: row.observacoes?.trim() || undefined,
                 tags: tags,
+                categoriaId: row.categoriaid?.trim() || undefined,
                 tenantId: tenantId
               };
 
               console.log(`🏷️ Linha ${rowNumber} - Tags extraídas:`, tags);
+              console.log(`📂 Linha ${rowNumber} - CategoriaId:`, row.categoriaid);
 
               // Criar contato
               await ContactService.createContact(contactData);

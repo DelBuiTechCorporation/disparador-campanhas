@@ -57,13 +57,16 @@ model TenantQuota {
 }
 
 model TenantSettings {
-  id            String   @id @default(uuid())
-  tenantId      String   @unique @map("tenant_id")
-  openaiApiKey  String?  @map("openai_api_key")
-  groqApiKey    String?  @map("groq_api_key")
-  customBranding Json?   @map("custom_branding") // Logo, colors, etc
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id                 String   @id @default(uuid())
+  tenantId           String   @unique @map("tenant_id")
+  openaiApiKey       String?  @map("openai_api_key")
+  groqApiKey         String?  @map("groq_api_key")
+  customBranding     Json?    @map("custom_branding") // Logo, colors, etc
+  chatwootUrl        String?  @map("chatwoot_url")
+  chatwootAccountId  String?  @map("chatwoot_account_id")
+  chatwootApiToken   String?  @map("chatwoot_api_token")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
   // Relations
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -97,6 +100,9 @@ model GlobalSettings {
   wahaApiKey      String   @default("") @map("waha_api_key")
   evolutionHost   String   @default("") @map("evolution_host")
   evolutionApiKey String   @default("") @map("evolution_api_key")
+  quepasaUrl      String   @default("") @map("quepasa_url")
+  quepasaLogin    String   @default("") @map("quepasa_login")
+  quepasaPassword String   @default("") @map("quepasa_password")
   logoUrl         String?  @map("logo_url")
   faviconUrl      String?  @map("favicon_url")
   iconUrl         String?  @map("icon_url")
@@ -168,6 +174,7 @@ model WhatsAppSession {
   criadoEm       DateTime   @default(now()) @map("criado_em")
   atualizadoEm   DateTime   @updatedAt @map("atualizado_em")
   provider       String     @default("WAHA")
+  quepasaToken   String?    @map("quepasa_token") // Token único gerado para cada sessão Quepasa
   campaigns      Campaign[]
 
   // Relations
