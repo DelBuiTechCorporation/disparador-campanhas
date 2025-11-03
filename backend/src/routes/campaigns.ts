@@ -12,6 +12,8 @@ import {
   setBusinessHours,
   getBusinessHours,
   checkBusinessHours,
+  getPendingMessages,
+  updatePendingMessages,
   campaignValidation
 } from '../controllers/campaignController';
 import { authMiddleware } from '../middleware/auth';
@@ -25,8 +27,12 @@ router.get('/tags', authMiddleware, getContactTags);
 router.get('/sessions', authMiddleware, getActiveSessions);
 router.get('/:id', authMiddleware, getCampaign);
 router.get('/:id/report', authMiddleware, getCampaignReport);
+router.get('/:id/messages', authMiddleware, getPendingMessages);
+router.get('/:id/pending-messages', authMiddleware, getPendingMessages);
 router.post('/', authMiddleware, campaignValidation, checkCampaignQuota, createCampaign);
 router.put('/:id', authMiddleware, updateCampaign);
+router.patch('/:id/messages', authMiddleware, updatePendingMessages);
+router.patch('/:id/pending-messages', authMiddleware, updatePendingMessages);
 router.delete('/:id', authMiddleware, deleteCampaign);
 router.patch('/:id/toggle', authMiddleware, toggleCampaign);
 

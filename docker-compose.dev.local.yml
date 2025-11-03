@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3003:3003"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres-dev:5432/contacts_dev?schema=public
+      - PORT=3003
+      - NODE_ENV=development
+      - JWT_SECRET=dev-super-secret-jwt-key-at-least-32-characters-long
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:3006,http://localhost:3003
+    networks:
+      - network_public
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: npm run dev
+
+networks:
+  network_public:
+    external: true

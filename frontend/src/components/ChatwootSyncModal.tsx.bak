@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { apiService } from '../services/api';
 
@@ -12,6 +12,8 @@ interface TagMapping {
   categoryId: string;
 }
 
+
+
 interface ChatwootSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -20,18 +22,23 @@ interface ChatwootSyncModalProps {
 
 export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncModalProps) {
   const [chatwootTags, setChatwootTags] = useState<ChatwootTag[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [tagMappings, setTagMappings] = useState<TagMapping[]>([]);
   const [isLoadingTags, setIsLoadingTags] = useState(false);
   const [tagEventSource, setTagEventSource] = useState<EventSource | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
 
-  // Carregar categorias quando modal abrir
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen) {
       loadCategories();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!syncJob || syncJob.status === 'completed' || syncJob.status === 'cancelled' || syncJob.status === 'error') {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        setPollInterval(null);
+      }
+    }
+  }, [syncJob, pollInterval]);
 
   if (!isOpen) return null;
 
@@ -99,11 +106,12 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
           eventSource.close();
           eventSource = null;
         }
+        setTagEventSource(null);
         
         if (chatwootTags.length === 0) {
           toast('Nenhuma tag encontrada no Chatwoot', { icon: 'ℹ️', id: 'tags-toast' });
         } else {
-          toast.success(`Tags carregadas com sucesso!`, { id: 'tags-toast' });
+          toast.success(`${chatwootTags.length} tags encontradas no Chatwoot`, { id: 'tags-toast' });
         }
       });
       
@@ -142,32 +150,81 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
     });
   };
 
-  const handleImport = async () => {
+  const handleSync = async () => {
     if (tagMappings.length === 0) {
-      toast.error('Selecione pelo menos uma tag para importar');
+      toast.error('Selecione pelo menos uma tag para sincronizar');
       return;
     }
 
-    setIsImporting(true);
     try {
-      // Simular importação por enquanto
-      toast.loading('Importando contatos...', { id: 'import-toast' });
+      const response = await apiService.syncChatwootContacts(tagMappings);
+      const jobId = response.jobId;
       
-      // Simular delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      setSyncJob({
+        jobId,
+        status: 'pending',
+        progress: { current: 0, total: 0 },
+        elapsedSeconds: 0
+      });
+
+      toast.loading('Sincronização iniciada em background...', { id: 'sync-toast' });
+
+      const interval = setInterval(() => {
+        pollSyncStatus(jobId);
+      }, 1000);
       
-      toast.success(`Importação simulada: ${tagMappings.length} tags mapeadas`, { id: 'import-toast' });
-      onSuccess();
-      handleClose();
+      setPollInterval(interval);
     } catch (error: any) {
-      console.error('Erro ao importar:', error);
-      toast.error(error.message || 'Erro ao importar contatos', { id: 'import-toast' });
-    } finally {
-      setIsImporting(false);
+      console.error('Erro ao iniciar sincronização:', error);
+      toast.error(error.message || 'Erro ao iniciar sincronização');
+    }
+  };
+
+  const pollSyncStatus = async (jobId: string) => {
+    try {
+      const response = await apiService.getSyncStatus(jobId);
+      setSyncJob(response);
+
+      if (response.status === 'completed') {
+        if (pollInterval) clearInterval(pollInterval);
+        toast.success(
+          `Sincronização concluída! ${response.result?.imported || 0} contatos importados, ${response.result?.updated || 0} atualizados`
+        );
+        onSuccess();
+      } else if (response.status === 'error') {
+        if (pollInterval) clearInterval(pollInterval);
+        toast.error(`Erro: ${response.error}`);
+      } else if (response.status === 'cancelled') {
+        if (pollInterval) clearInterval(pollInterval);
+        toast('Sincronização cancelada', { icon: '⚠️' });
+      }
+    } catch (error: any) {
+      console.error('Erro ao verificar status:', error);
+      if (pollInterval) clearInterval(pollInterval);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!syncJob) return;
+
+    try {
+      await apiService.cancelSync(syncJob.jobId);
+      setSyncJob({ ...syncJob, status: 'cancelled' });
+      if (pollInterval) clearInterval(pollInterval);
+      toast('Sincronização cancelada', { icon: '⛔' });
+    } catch (error: any) {
+      console.error('Erro ao cancelar:', error);
+      toast.error('Erro ao cancelar sincronização');
     }
   };
 
   const handleClose = () => {
+    if (syncJob && (syncJob.status === 'pending' || syncJob.status === 'running')) {
+      if (!confirm('Sincronização em andamento. Deseja sair?')) {
+        return;
+      }
+    }
+
     if (isLoadingTags) {
       if (!confirm('Carregamento de tags em andamento. Deseja sair?')) {
         return;
@@ -175,20 +232,107 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
       cancelTagLoading();
     }
 
-    if (isImporting) {
-      if (!confirm('Importação em andamento. Deseja sair?')) {
-        return;
-      }
-    }
-
+    if (pollInterval) clearInterval(pollInterval);
     if (tagEventSource) {
       tagEventSource.close();
       setTagEventSource(null);
     }
     setChatwootTags([]);
     setTagMappings([]);
+    setSyncJob(null);
     onClose();
   };
+
+  // Se há um job em progresso, mostrar a tela de progresso
+  if (syncJob && (syncJob.status === 'pending' || syncJob.status === 'running' || syncJob.status === 'completed' || syncJob.status === 'error')) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-gray-100" role="dialog" aria-labelledby="sync-progress-title">
+          <div className="p-6">
+            <h2 id="sync-progress-title" className="text-lg font-bold text-gray-900 mb-4">
+              Sincronização em Progresso
+            </h2>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                {syncJob.status === 'pending' || syncJob.status === 'running' ? (
+                  <svg className="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : syncJob.status === 'completed' ? (
+                  <svg className="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+                <div>
+                  <p className="font-medium text-gray-900">
+                    {syncJob.status === 'running' ? 'Em andamento...' : syncJob.status === 'completed' ? 'Concluído' : 'Erro'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Tempo decorrido: {syncJob.elapsedSeconds}s
+                  </p>
+                </div>
+              </div>
+
+              {syncJob.status === 'running' && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>Progresso</span>
+                    <span>{syncJob.progress.current} / {syncJob.progress.total}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-blue-600 h-full transition-all duration-300"
+                      style={{ width: syncJob.progress.total > 0 ? `${(syncJob.progress.current / syncJob.progress.total) * 100}%` : '0%' }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+
+              {syncJob.status === 'completed' && syncJob.result && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-sm text-green-800">
+                    <strong>{syncJob.result.imported}</strong> contatos importados<br />
+                    <strong>{syncJob.result.updated}</strong> contatos atualizados
+                  </p>
+                </div>
+              )}
+
+              {syncJob.status === 'error' && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-800">
+                    {syncJob.error || 'Erro desconhecido'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-6">
+              {(syncJob.status === 'pending' || syncJob.status === 'running') && (
+                <button
+                  onClick={handleCancel}
+                  className="flex-1 bg-red-100 text-red-700 py-2 px-4 rounded-lg hover:bg-red-200 font-medium transition-colors text-sm"
+                >
+                  Cancelar
+                </button>
+              )}
+              <button
+                onClick={handleClose}
+                className={`${(syncJob.status === 'pending' || syncJob.status === 'running') ? 'flex-1' : 'w-full'} bg-gray-100 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-200 font-medium transition-colors text-sm`}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm overflow-y-auto">
@@ -308,6 +452,19 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
               </div>
             )}
 
+            {/* Instructions */}
+            {chatwootTags.length === 0 && !isLoadingTags && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="font-medium text-blue-900 text-sm mb-2">ℹ️ Como funciona</h3>
+                <ul className="text-xs text-blue-700 space-y-1">
+                  <li>• Clique em "Carregar Tags" para buscar as tags do Chatwoot</li>
+                  <li>• Associe cada tag do Chatwoot a uma categoria do sistema</li>
+                  <li>• Os contatos das conversas com essas tags serão importados</li>
+                  <li>• Contatos já existentes serão atualizados</li>
+                </ul>
+              </div>
+            )}
+
             {/* Selected Mappings Summary */}
             {tagMappings.length > 0 && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -327,19 +484,6 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
                 </div>
               </div>
             )}
-
-            {/* Instructions */}
-            {chatwootTags.length === 0 && !isLoadingTags && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="font-medium text-blue-900 text-sm mb-2">ℹ️ Como funciona</h3>
-                <ul className="text-xs text-blue-700 space-y-1">
-                  <li>• Clique em "Carregar Tags" para buscar as tags do Chatwoot</li>
-                  <li>• Associe cada tag do Chatwoot a uma categoria do sistema</li>
-                  <li>• Os contatos das conversas com essas tags serão importados</li>
-                  <li>• Contatos já existentes serão atualizados</li>
-                </ul>
-              </div>
-            )}
           </div>
 
           {/* Action Buttons */}
@@ -351,26 +495,14 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
               Fechar
             </button>
             <button
-              onClick={handleImport}
-              disabled={tagMappings.length === 0 || isImporting}
+              onClick={handleSync}
+              disabled={tagMappings.length === 0}
               className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 font-medium transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {isImporting ? (
-                <>
-                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Importando...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Importar Contatos
-                </>
-              )}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Sincronizar Contatos
             </button>
           </div>
         </div>

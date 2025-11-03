@@ -36,7 +36,13 @@ export const authMiddleware = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    // Tentar obter token de header Authorization ou query string (para SSE)
+    let token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      // Tentar obter de query string para SSE (EventSource)
+      token = req.query.token as string;
+    }
 
     if (!token) {
       res.status(401).json({

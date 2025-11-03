@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Header } from '../components/Header';
 import { BusinessHoursModal } from '../components/BusinessHoursModal';
+import { EditCampaignMessagesModal } from '../components/EditCampaignMessagesModal';
 
 type MessageContent =
   | { text: string }
@@ -71,6 +72,8 @@ export function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showEditMessagesModal, setShowEditMessagesModal] = useState(false);
+  const [selectedCampaignForEdit, setSelectedCampaignForEdit] = useState<string | null>(null);
   const [reportData, setReportData] = useState<any>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [currentReportCampaignId, setCurrentReportCampaignId] = useState<string | null>(null);
@@ -757,6 +760,20 @@ export function CampaignsPage() {
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
                         </svg>
                       </button>
+                      {['RUNNING', 'PAUSED', 'PENDING'].includes(campaign.status) && (
+                        <button
+                          onClick={() => {
+                            setSelectedCampaignForEdit(campaign.id);
+                            setShowEditMessagesModal(true);
+                          }}
+                          className="px-2 py-1 bg-cyan-600 text-white text-xs rounded hover:bg-cyan-700"
+                          title="Editar mensagens pendentes"
+                        >
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M11.3 1.046A1 1 0 0112 2v5h6a1 1 0 01.82 1.573l-7 10.666A1 1 0 018 18.479V12H2a1 1 0 01-.82-1.573l7-10.666a1 1 0 011.12-.293z" />
+                          </svg>
+                        </button>
+                      )}
                       {campaign.status === 'RUNNING' && (
                         <button
                           onClick={() => handleToggleCampaign(campaign.id, 'pause')}
@@ -2364,6 +2381,21 @@ export function CampaignsPage() {
               </div>
             </div>
           </div>
+        )}
+        
+        {/* Modal de Edição de Mensagens */}
+        {showEditMessagesModal && selectedCampaignForEdit && (
+          <EditCampaignMessagesModal
+            isOpen={showEditMessagesModal}
+            campaignId={selectedCampaignForEdit}
+            onClose={() => {
+              setShowEditMessagesModal(false);
+              setSelectedCampaignForEdit(null);
+            }}
+            onSuccess={() => {
+              loadCampaigns();
+            }}
+          />
         )}
         
         {/* Modal de Horários Comerciais (criação ou edição) */}

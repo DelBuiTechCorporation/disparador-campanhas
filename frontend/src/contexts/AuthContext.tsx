@@ -98,27 +98,50 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const checkAuth = async (): Promise<boolean> => {
+    console.log('[AUTH] checkAuth chamado, token:', !!token);
+    
     if (!token) {
+      console.log('[AUTH] Sem token, definindo isLoading como false');
       setIsLoading(false);
       return false;
     }
 
     try {
-      const response = await apiRequest('/auth/verify');
+      console.log('[AUTH] Verificando token...');
+      
+      // Adicionar timeout de 10 segundos
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.log('[AUTH] Timeout na verificação');
+        controller.abort();
+      }, 10000);
+
+      const response = await fetch(`${API_BASE_URL}/auth/verify`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
+        console.log('[AUTH] Resposta não ok:', response.status);
         logout();
         return false;
       }
 
       const data = await response.json();
+      console.log('[AUTH] Token válido, usuário:', data.data.user.email);
       setUser(data.data.user);
       return true;
     } catch (error) {
-      console.error('Erro ao verificar autenticação:', error);
+      console.error('[AUTH] Erro ao verificar autenticação:', error);
       logout();
       return false;
     } finally {
+      console.log('[AUTH] Finalizando checkAuth, isLoading = false');
       setIsLoading(false);
     }
   };

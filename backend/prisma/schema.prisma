@@ -173,7 +173,7 @@ model WhatsAppSession {
   tenantId       String?    @map("tenant_id") // Optional for backward compatibility
   criadoEm       DateTime   @default(now()) @map("criado_em")
   atualizadoEm   DateTime   @updatedAt @map("atualizado_em")
-  provider       String     @default("WAHA")
+  provider       WhatsAppProvider     @default(WAHA)
   quepasaToken   String?    @map("quepasa_token") // Token único gerado para cada sessão Quepasa
   campaigns      Campaign[]
 
@@ -526,6 +526,12 @@ enum IntegrationType {
   STORAGE      // Cloud storage (Google Drive, Dropbox)
   ANALYTICS    // Analytics platforms (Google Analytics, Mixpanel)
   CUSTOM       // Custom API integrations
+}
+
+enum WhatsAppProvider {
+  WAHA
+  EVOLUTION
+  QUEPASA
 }
 
 // Settings model is now split into GlobalSettings and TenantSettings

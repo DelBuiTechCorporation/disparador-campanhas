@@ -26,8 +26,6 @@ COPY --from=builder /app/prisma ./prisma
 COPY start.sh ./start.sh
 
 RUN mkdir -p /app/data /app/uploads /app/backups && chown -R nodejs:nodejs /app/data /app/uploads /app/backups
-COPY uploads/default_icon.png /app/uploads/default_icon.png
-COPY uploads/default_favicon.png /app/uploads/default_favicon.png
 RUN chmod +x start.sh && chown nodejs:nodejs start.sh
 RUN chown -R nodejs:nodejs /app/node_modules/@prisma || true
 RUN chmod -R 755 /app/node_modules/@prisma || true

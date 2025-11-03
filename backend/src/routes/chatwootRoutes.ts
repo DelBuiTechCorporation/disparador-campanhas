@@ -1,12 +1,9 @@
 import { Router } from 'express';
-import { getChatwootTags, syncChatwootContacts } from '../controllers/chatwootController';
+import { streamChatwootTags } from '../controllers/chatwootController';
 
 const router = Router();
 
-// GET /api/chatwoot/tags - Buscar tags do Chatwoot
-router.get('/tags', getChatwootTags);
-
-// POST /api/chatwoot/sync - Sincronizar contatos do Chatwoot
-router.post('/sync', syncChatwootContacts);
+// GET /api/chatwoot/tags/stream - Stream de tags em tempo real (SSE)
+router.get('/tags/stream', streamChatwootTags);
 
 export default router;

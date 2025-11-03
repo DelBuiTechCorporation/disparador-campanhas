@@ -316,6 +316,17 @@ export const updateCampaign = async (req: AuthenticatedRequest, res: Response) =
     const { id } = req.params;
     const updateData = req.body;
 
+    // Verificar tenant ownership
+    const where: any = { id };
+    if (req.user?.role !== 'SUPERADMIN') {
+      where.tenantId = req.tenantId;
+    }
+
+    const existingCampaign = await prisma.campaign.findFirst({ where });
+    if (!existingCampaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada' });
+    }
+
     // Se há targetTags, converter para JSON
     if (updateData.targetTags) {
       updateData.targetTags = JSON.stringify(updateData.targetTags);
@@ -389,8 +400,14 @@ export const toggleCampaign = async (req: AuthenticatedRequest, res: Response) =
     const { id } = req.params;
     const { action } = req.body; // 'pause' or 'resume'
 
-    const campaign = await prisma.campaign.findUnique({
-      where: { id }
+    // Verificar tenant ownership
+    const where: any = { id };
+    if (req.user?.role !== 'SUPERADMIN') {
+      where.tenantId = req.tenantId;
+    }
+
+    const campaign = await prisma.campaign.findFirst({
+      where
     });
 
     if (!campaign) {
@@ -424,9 +441,15 @@ export const getCampaignReport = async (req: AuthenticatedRequest, res: Response
 
     console.log(`🔍 Buscando relatório para campanha: ${id}`);
 
+    // Verificar tenant ownership
+    const where: any = { id };
+    if (req.user?.role !== 'SUPERADMIN') {
+      where.tenantId = req.tenantId;
+    }
+
     // Buscar campanha com todas as mensagens e estatísticas
-    const campaign = await prisma.campaign.findUnique({
-      where: { id },
+    const campaign = await prisma.campaign.findFirst({
+      where,
       include: {
         messages: {
           orderBy: { criadoEm: 'asc' },
@@ -780,6 +803,157 @@ export const checkBusinessHours = async (req: AuthenticatedRequest, res: Respons
     });
   } catch (error) {
     console.error('Erro ao verificar horários comerciais:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+};
+
+// Get pending campaign messages (for editing while running)
+export const getPendingMessages = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 50, status = 'PENDING' } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Validate campaign exists and user has access
+    const where: any = { id };
+    if (req.user?.role !== 'SUPERADMIN') {
+      where.tenantId = req.tenantId;
+    }
+
+    const campaign = await prisma.campaign.findFirst({ where });
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada' });
+    }
+
+    // Get messages by status
+    const messageWhere: any = {
+      campaignId: id
+    };
+
+    if (status && ['PENDING', 'PROCESSING', 'SENT', 'FAILED'].includes(String(status))) {
+      messageWhere.status = String(status);
+    }
+
+    const [messages, total] = await Promise.all([
+      prisma.campaignMessage.findMany({
+        where: messageWhere,
+        skip,
+        take: Number(limit),
+        orderBy: { criadoEm: 'asc' },
+        select: {
+          id: true,
+          contactId: true,
+          contactPhone: true,
+          contactName: true,
+          status: true,
+          sentAt: true,
+          errorMessage: true,
+          sessionName: true,
+          selectedVariation: true,
+          criadoEm: true,
+          atualizadoEm: true
+        }
+      }),
+      prisma.campaignMessage.count({ where: messageWhere })
+    ]);
+
+    res.json({
+      messages,
+      pagination: {
+        total,
+        page: Number(page),
+        limit: Number(limit),
+        totalPages: Math.ceil(total / Number(limit))
+      },
+      campaign: {
+        id: campaign.id,
+        nome: campaign.nome,
+        status: campaign.status,
+        messageType: campaign.messageType,
+        messageContent: JSON.parse(campaign.messageContent)
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao buscar mensagens pendentes:', error);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+};
+
+// Update campaign message content for pending messages
+// This allows changing the message while campaign is running/paused
+export const updatePendingMessages = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { messageContent, messageType } = req.body;
+
+    if (!messageContent) {
+      return res.status(400).json({ error: 'messageContent é obrigatório' });
+    }
+
+    // Validate campaign exists and user has access
+    const where: any = { id };
+    if (req.user?.role !== 'SUPERADMIN') {
+      where.tenantId = req.tenantId;
+    }
+
+    const campaign = await prisma.campaign.findFirst({ where });
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada' });
+    }
+
+    // Only allow updating if campaign is PAUSED, RUNNING, or PENDING
+    if (!['PENDING', 'RUNNING', 'PAUSED'].includes(campaign.status)) {
+      return res.status(400).json({ 
+        error: `Não é possível atualizar mensagens de uma campanha ${campaign.status}` 
+      });
+    }
+
+    // Update campaign message content
+    const updateData: any = {
+      messageContent: JSON.stringify(messageContent)
+    };
+
+    // Optionally update message type if provided
+    if (messageType && ['text', 'image', 'video', 'audio', 'document', 'sequence', 'openai', 'groq', 'wait'].includes(messageType)) {
+      updateData.messageType = messageType;
+    }
+
+    const updatedCampaign = await prisma.campaign.update({
+      where: { id },
+      data: updateData
+    });
+
+    // Get count of pending messages
+    const pendingCount = await prisma.campaignMessage.count({
+      where: {
+        campaignId: id,
+        status: 'PENDING'
+      }
+    });
+
+    // Get count of processing messages
+    const processingCount = await prisma.campaignMessage.count({
+      where: {
+        campaignId: id,
+        status: 'PROCESSING'
+      }
+    });
+
+    res.json({
+      message: 'Conteúdo da campanha atualizado com sucesso',
+      campaign: {
+        id: updatedCampaign.id,
+        nome: updatedCampaign.nome,
+        status: updatedCampaign.status,
+        messageType: updatedCampaign.messageType,
+        messageContent: JSON.parse(updatedCampaign.messageContent),
+        pendingMessages: pendingCount,
+        processingMessages: processingCount,
+        updatedAt: updatedCampaign.atualizadoEm
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar conteúdo da campanha:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 };

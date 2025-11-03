@@ -72,7 +72,7 @@ class CampaignSchedulerService {
         await this.startCampaign(campaign);
       }
 
-      // Processar campanhas em execução
+      // Processar campanhas em execução (apenas RUNNING, não PAUSED)
       const runningCampaigns = await prisma.campaign.findMany({
         where: { status: 'RUNNING' },
         include: {
@@ -100,6 +100,28 @@ class CampaignSchedulerService {
           if (activeCount === 0) {
             await this.completeCampaign(campaign.id);
           }
+        }
+      }
+
+      // Verificar campanhas PAUSED para detectar quando não há mais mensagens a processar
+      // Isso previne que campanhas pausadas nunca sejam completadas
+      const pausedCampaigns = await prisma.campaign.findMany({
+        where: { status: 'PAUSED' }
+      });
+
+      for (const campaign of pausedCampaigns) {
+        // Verificar se todas as mensagens foram processadas (excluindo PROCESSING e PENDING)
+        const activeCount = await prisma.campaignMessage.count({
+          where: {
+            campaignId: campaign.id,
+            status: { in: ['PENDING', 'PROCESSING'] }
+          }
+        });
+
+        // Se não há mensagens pendentes/processando, marcar como completa
+        if (activeCount === 0) {
+          console.log(`✅ Campanha pausada ${campaign.id} não tem mais mensagens. Completando...`);
+          await this.completeCampaign(campaign.id);
         }
       }
     } catch (error) {
@@ -197,6 +219,18 @@ class CampaignSchedulerService {
     let selectedVariationInfo: string | null = null;
 
     try {
+      // VERIFICAR SE A CAMPANHA AINDA ESTÁ EM RUNNING (pode ter sido pausada)
+      const currentCampaignStatus = await prisma.campaign.findUnique({
+        where: { id: campaign.id },
+        select: { status: true }
+      });
+
+      if (currentCampaignStatus?.status !== 'RUNNING') {
+        console.log(`⏸️ Campanha ${campaign.id} não está mais em RUNNING (status: ${currentCampaignStatus?.status}). Pulando processamento.`);
+        // Não processar, deixar mensagem como está
+        return;
+      }
+
       // Verificar horário comercial antes de processar a mensagem
       const businessHours = await BusinessHoursService.getBusinessHours(campaign.id);
       
@@ -260,11 +294,51 @@ class CampaignSchedulerService {
         await new Promise(resolve => setTimeout(resolve, randomDelay));
       }
 
+      // VERIFICAR NOVAMENTE SE A CAMPANHA AINDA ESTÁ EM RUNNING (após delay, pode ter sido pausada)
+      const campaignStatusAfterDelay = await prisma.campaign.findUnique({
+        where: { id: campaign.id },
+        select: { status: true }
+      });
+
+      if (campaignStatusAfterDelay?.status !== 'RUNNING') {
+        console.log(`⏸️ Campanha ${campaign.id} foi pausada durante o delay. Revertendo mensagem para PENDING.`);
+        // Revert message status back to PENDING
+        await prisma.campaignMessage.update({
+          where: { id: message.id },
+          data: { status: 'PENDING' }
+        });
+        return;
+      }
+
       console.log(`🔍 DEBUGGING - Message ${message.id} for contact ${message.contactId}`);
 
+      // 🔄 SEMPRE buscar conteúdo ATUAL da campanha (permite editar enquanto rodando)
+      const currentCampaign = await prisma.campaign.findUnique({
+        where: { id: campaign.id },
+        select: {
+          messageContent: true,
+          messageType: true,
+          randomDelay: true,
+          sessionNames: true
+        }
+      });
+
+      if (!currentCampaign) {
+        console.log(`❌ Campanha ${campaign.id} não encontrada durante processamento!`);
+        await prisma.campaignMessage.update({
+          where: { id: message.id },
+          data: {
+            status: 'FAILED',
+            errorMessage: 'Campanha foi deletada'
+          }
+        });
+        return;
+      }
+
       // Preparar conteúdo da mensagem e selecionar variações ANTES dos outros processamentos
-      const messageContent = JSON.parse(campaign.messageContent);
-      console.log(`🔍 MESSAGE CONTENT:`, messageContent);
+      // IMPORTANTE: Usar conteúdo ATUAL, não o cache da memória
+      const messageContent = JSON.parse(currentCampaign.messageContent);
+      console.log(`🔍 MESSAGE CONTENT (ATUAL):`, messageContent);
 
       // Primeiro selecionar variação aleatória se houver
       const variationResult = this.selectRandomVariation(messageContent);
@@ -298,7 +372,8 @@ class CampaignSchedulerService {
       }
 
       // Buscar dados do contato para variáveis dinâmicas usando ContactService
-      const contactsResponse = await ContactService.getContacts();
+      // IMPORTANTE: Passar tenantId da campanha para manter isolamento multi-tenant
+      const contactsResponse = await ContactService.getContacts(undefined, 1, 10000, campaign.tenantId);
       const contact = contactsResponse.contacts.find((c: any) => c.id === message.contactId);
 
       console.log(`🔍 CONTACT FOUND:`, contact);
@@ -353,7 +428,7 @@ class CampaignSchedulerService {
         result = await this.sendMessageViaEvolution(
           selectedSession,
           contactCheck.validPhone || message.contactPhone,
-          campaign.messageType,
+          currentCampaign.messageType,
           processedContent,
           contact,
           campaign.tenantId
@@ -362,7 +437,7 @@ class CampaignSchedulerService {
         result = await this.sendMessageViaWaha(
           selectedSession,
           message.contactPhone,
-          campaign.messageType,
+          currentCampaign.messageType,
           processedContent,
           contactCheck.chatId,
           contact,

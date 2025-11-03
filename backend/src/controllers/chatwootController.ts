@@ -4,53 +4,95 @@ import { ChatwootService } from '../services/chatwootService';
 
 const chatwootService = new ChatwootService();
 
-export const getChatwootTags = async (req: AuthenticatedRequest, res: Response) => {
+
+
+// SSE stream para tags
+export const streamChatwootTags = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const tenantId = req.tenantId;
-    if (!tenantId) {
-      return res.status(400).json({ error: 'TenantID não encontrado' });
+    // Para SUPERADMIN, permitir tenantId via query parameter
+    let tenantId = req.tenantId;
+    
+    if (req.user?.role === 'SUPERADMIN' && req.query.tenantId) {
+      tenantId = req.query.tenantId as string;
     }
-
-    const tags = await chatwootService.getTags(tenantId);
-    res.json({ tags });
-  } catch (error: any) {
-    console.error('Erro ao buscar tags do Chatwoot:', error);
-
-    // Se for erro de configuração, retornar 400 ao invés de 500
-    if (error.message && error.message.includes('não está configurado')) {
-      return res.status(400).json({
-        error: 'Chatwoot não configurado',
-        message: 'Configure o Chatwoot na página de Integrações antes de sincronizar contatos.'
+    
+    if (!tenantId) {
+      return res.status(400).json({ 
+        error: 'TenantID não encontrado',
+        message: 'SUPERADMIN deve fornecer tenantId como query parameter'
       });
     }
 
-    res.status(500).json({
-      error: 'Erro ao buscar tags do Chatwoot',
-      message: error.message
+    // Configurar headers para SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    const sendEvent = (event: string, data: any) => {
+      if (!res.writableEnded) {
+        res.write(`event: ${event}\n`);
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      }
+    };
+
+    let connectionClosed = false;
+
+    // Detectar quando conexão é fechada
+    res.on('close', () => {
+      connectionClosed = true;
+      chatwootService.cancelSync(tenantId);
     });
-  }
-};
 
-export const syncChatwootContacts = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const tenantId = req.tenantId;
-    if (!tenantId) {
-      return res.status(400).json({ error: 'TenantID não encontrado' });
-    }
+    req.on('close', () => {
+      connectionClosed = true;
+      chatwootService.cancelSync(tenantId);
+    });
 
-    const { tagMappings } = req.body;
+    // Iniciar carregamento em background
+    (async () => {
+      try {
+        const tagsMap = new Map<string, number>();
 
-    if (!tagMappings || !Array.isArray(tagMappings) || tagMappings.length === 0) {
-      return res.status(400).json({ error: 'Tag mappings são obrigatórios' });
-    }
+        // Callback para receber tags conforme são carregadas
+        const onTagUpdate = (tags: Array<{ name: string; count: number }>) => {
+          if (connectionClosed || res.writableEnded) return;
 
-    const result = await chatwootService.syncContacts(tenantId, tagMappings);
-    res.json(result);
+          tags.forEach(tag => tagsMap.set(tag.name, tag.count));
+
+          sendEvent('tags_update', {
+            tags: Array.from(tagsMap.entries()).map(([name, count]) => ({ name, count })),
+            total: tagsMap.size
+          });
+        };
+
+        // Obter tags com callback de progresso
+        const allTags = await chatwootService.getTagsWithCallback(tenantId, onTagUpdate);
+
+        if (!connectionClosed && !res.writableEnded) {
+          sendEvent('tags_complete', {
+            tags: allTags,
+            total: allTags.length
+          });
+          res.end();
+        }
+      } catch (error: any) {
+        if (!connectionClosed && !res.writableEnded) {
+          sendEvent('tags_error', { error: error.message });
+          res.end();
+        }
+      }
+    })();
+
   } catch (error: any) {
-    console.error('Erro ao sincronizar contatos do Chatwoot:', error);
-    res.status(500).json({
-      error: 'Erro ao sincronizar contatos',
-      message: error.message
-    });
+    console.error('Erro ao iniciar stream de tags:', error);
+    if (!res.writableEnded) {
+      res.status(500).json({
+        error: 'Erro ao iniciar stream de tags',
+        message: error.message
+      });
+    }
   }
 };
+
+
