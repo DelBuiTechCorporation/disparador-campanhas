@@ -21,8 +21,6 @@ function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
   const { settings } = useGlobalSettings();
 
-  console.log('[APP] Render: isAuthenticated=', isAuthenticated, 'isLoading=', isLoading);
-
   // Aplicar meta tags dinâmicas (título e favicon)
   useEffect(() => {
     // Atualizar título da página
