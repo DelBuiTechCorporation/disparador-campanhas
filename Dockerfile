@@ -53,7 +53,7 @@ COPY --from=backend-builder /app/backend/start.sh ./start.sh
 COPY --from=frontend-builder /app/frontend/dist ./public
 
 # Create necessary directories and set permissions
-RUN mkdir -p /app/data /app/uploads /app/backups && chown -R nodejs:nodejs /app/data /app/uploads /app/backups /app/public
+RUN mkdir -p /app/data /app/uploads && chown -R nodejs:nodejs /app/data /app/uploads /app/public
 RUN chmod +x start.sh && chown nodejs:nodejs start.sh
 RUN chown -R nodejs:nodejs /app/node_modules
 RUN chmod -R 755 /app/node_modules
