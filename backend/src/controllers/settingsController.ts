@@ -79,20 +79,6 @@ export const settingsValidation = [
       throw new Error('API Key da Groq deve ter pelo menos 10 caracteres');
     }
     return true;
-  }),
-  body('evolutionHost').optional().custom((value) => {
-    if (!value || value === '') return true;
-    if (!/^https?:\/\/.+/.test(value)) {
-      throw new Error('Host Evolution deve ser uma URL válida');
-    }
-    return true;
-  }),
-  body('evolutionApiKey').optional().custom((value) => {
-    if (!value || value === '') return true;
-    if (value.length < 10) {
-      throw new Error('API Key Evolution deve ter pelo menos 10 caracteres');
-    }
-    return true;
   })
 ];
 
@@ -119,7 +105,7 @@ export const getSettings = async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
-    // Combinar as configurações (Quepasa é global, não por tenant)
+    // Combinar as configurações
     const combinedSettings = {
       ...globalSettings,
       openaiApiKey: tenantSettings?.openaiApiKey || null,
@@ -160,17 +146,12 @@ export const updateSettings = async (req: AuthenticatedRequest, res: Response) =
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { wahaHost, wahaApiKey, evolutionHost, evolutionApiKey, quepasaUrl, quepasaLogin, quepasaPassword, companyName, pageTitle, openaiApiKey, groqApiKey, chatwootUrl, chatwootAccountId, chatwootApiToken, tenantId } = req.body;
+    const { wahaHost, wahaApiKey, companyName, pageTitle, openaiApiKey, groqApiKey, chatwootUrl, chatwootAccountId, chatwootApiToken, tenantId } = req.body;
 
-    // Atualizar configurações globais (WAHA, Evolution, Quepasa são globais)
+    // Atualizar configurações globais (WAHA)
     const globalSettings = await settingsService.updateSettings({
       wahaHost,
       wahaApiKey,
-      evolutionHost,
-      evolutionApiKey,
-      quepasaUrl,
-      quepasaLogin,
-      quepasaPassword,
       companyName,
       pageTitle
     });

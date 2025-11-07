@@ -20,8 +20,6 @@ async function main() {
       singleton: true,
       wahaHost: process.env.DEFAULT_WAHA_HOST || '',
       wahaApiKey: process.env.DEFAULT_WAHA_API_KEY || '',
-      evolutionHost: process.env.DEFAULT_EVOLUTION_HOST || '',
-      evolutionApiKey: process.env.DEFAULT_EVOLUTION_API_KEY || '',
       companyName: process.env.DEFAULT_COMPANY_NAME || 'Astra Campaign',
       pageTitle: process.env.DEFAULT_PAGE_TITLE || 'Sistema de Gestão de Contatos',
       logoUrl: process.env.DEFAULT_LOGO_URL || null,

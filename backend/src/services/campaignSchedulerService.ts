@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 import { sendMessage, checkContactExists } from './wahaApiService';
-import { sendMessageViaEvolution, checkContactExistsEvolution } from './evolutionMessageService';
 import { ContactService } from './contactService';
 import { openaiService } from './openaiService';
 import { groqService } from './groqService';
@@ -383,24 +382,19 @@ class CampaignSchedulerService {
 
       console.log(`🔍 PROCESSED CONTENT:`, processedContent);
 
-      // Verificar se o número existe no WhatsApp antes de enviar usando provedor correto
+      // Verificar se o número existe no WhatsApp antes de enviar usando WAHA
       let contactCheck: any = { exists: false };
-
-      if (provider === 'EVOLUTION') {
-        contactCheck = await checkContactExistsEvolution(selectedSession, message.contactPhone);
-      } else {
-        contactCheck = await checkContactExists(selectedSession, message.contactPhone);
-      }
+      contactCheck = await checkContactExists(selectedSession, message.contactPhone);
 
       if (!contactCheck.exists) {
-        console.log(`❌ Contact ${message.contactPhone} does not exist on WhatsApp (${provider}). Skipping message.`);
+        console.log(`❌ Contact ${message.contactPhone} does not exist on WhatsApp. Skipping message.`);
 
         // Marcar como falha por número inexistente
         await prisma.campaignMessage.update({
           where: { id: message.id },
           data: {
             status: 'FAILED',
-            errorMessage: `Número não existe no WhatsApp (${provider})`,
+            errorMessage: `Número não existe no WhatsApp`,
             selectedVariation: selectedVariationInfo
           }
         });
@@ -416,34 +410,19 @@ class CampaignSchedulerService {
         return;
       }
 
-      if (provider === 'EVOLUTION') {
-        console.log(`✅ Contact ${message.contactPhone} exists on Evolution. Using validated phone: ${contactCheck.validPhone}`);
-      } else {
-        console.log(`✅ Contact ${message.contactPhone} exists on WAHA. Using chatId: ${contactCheck.chatId}`);
-      }
+      console.log(`✅ Contact ${message.contactPhone} exists on WAHA. Using chatId: ${contactCheck.chatId}`);
 
-      // Enviar mensagem usando o provedor correto
+      // Enviar mensagem usando WAHA
       let result: any;
-      if (provider === 'EVOLUTION') {
-        result = await this.sendMessageViaEvolution(
-          selectedSession,
-          contactCheck.validPhone || message.contactPhone,
-          currentCampaign.messageType,
-          processedContent,
-          contact,
-          campaign.tenantId
-        );
-      } else {
-        result = await this.sendMessageViaWaha(
-          selectedSession,
-          message.contactPhone,
-          currentCampaign.messageType,
-          processedContent,
-          contactCheck.chatId,
-          contact,
-          campaign.tenantId
-        );
-      }
+      result = await this.sendMessageViaWaha(
+        selectedSession,
+        message.contactPhone,
+        currentCampaign.messageType,
+        processedContent,
+        contactCheck.chatId,
+        contact,
+        campaign.tenantId
+      );
 
       if (result.success) {
         // Atualizar status da mensagem
@@ -666,131 +645,6 @@ class CampaignSchedulerService {
       processedContent: content,
       variationInfo: null
     };
-  }
-
-  private async sendMessageViaEvolution(instanceName: string, phone: string, messageType: string, content: any, contactData?: any, tenantId?: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
-    try {
-      let result;
-
-      switch (messageType) {
-        case 'text':
-          result = await sendMessageViaEvolution(instanceName, phone, { text: content.text });
-          break;
-
-        case 'image':
-          result = await sendMessageViaEvolution(instanceName, phone, {
-            image: { url: content.url },
-            caption: content.caption || '',
-            fileName: 'imagem.png'
-          });
-          break;
-
-        case 'video':
-          result = await sendMessageViaEvolution(instanceName, phone, {
-            video: { url: content.url },
-            caption: content.caption || '',
-            fileName: 'video.mp4'
-          });
-          break;
-
-        case 'audio':
-          result = await sendMessageViaEvolution(instanceName, phone, {
-            audio: { url: content.url },
-            fileName: 'audio.ogg'
-          });
-          break;
-
-        case 'document':
-          result = await sendMessageViaEvolution(instanceName, phone, {
-            document: { url: content.url },
-            fileName: content.fileName || 'documento.pdf',
-            caption: content.caption || ''
-          });
-          break;
-
-        case 'openai':
-          // Gerar mensagem usando OpenAI
-          console.log('🤖 Gerando mensagem com OpenAI (Evolution)...', content);
-
-          const openaiResult = await openaiService.generateMessage(content, contactData, tenantId);
-
-          if (!openaiResult.success) {
-            throw new Error(`OpenAI error: ${openaiResult.error}`);
-          }
-
-          console.log('✅ Mensagem gerada pela OpenAI (Evolution):', openaiResult.message);
-
-          // Enviar a mensagem gerada como texto
-          result = await sendMessageViaEvolution(instanceName, phone, { text: openaiResult.message });
-          break;
-
-        case 'groq':
-          // Gerar mensagem usando Groq
-          console.log('⚡ Gerando mensagem com Groq (Evolution)...', content);
-
-          const groqResult = await groqService.generateMessage(content, contactData, tenantId);
-
-          if (!groqResult.success) {
-            throw new Error(`Groq error: ${groqResult.error}`);
-          }
-
-          console.log('✅ Mensagem gerada pela Groq (Evolution):', groqResult.message);
-
-          // Enviar a mensagem gerada como texto
-          result = await sendMessageViaEvolution(instanceName, phone, { text: groqResult.message });
-          break;
-
-        case 'sequence':
-          // Para sequência, enviar todos os itens com delay entre eles
-          if (!content.sequence || content.sequence.length === 0) {
-            throw new Error('Sequence is empty');
-          }
-
-          let lastResult;
-          for (let i = 0; i < content.sequence.length; i++) {
-            const item = content.sequence[i];
-
-            // Tratar tipo 'wait' como delay personalizado
-            if (item.type === 'wait') {
-              const waitTime = item.content?.waitTime || 30; // Default 30 segundos se não especificado
-              console.log(`⏰ Aplicando espera personalizada de ${waitTime} segundos...`);
-              await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
-
-              // Para o wait, consideramos como "sucesso" para continuar a sequência
-              lastResult = { success: true, messageId: 'wait-delay' };
-              console.log(`✅ Espera de ${waitTime} segundos concluída`);
-              continue; // Pular para próximo item da sequência
-            }
-
-            lastResult = await this.sendMessageViaEvolution(instanceName, phone, item.type, item.content, contactData, tenantId);
-
-            if (!lastResult.success) {
-              throw new Error(`Failed to send sequence item ${i + 1}: ${lastResult.error}`);
-            }
-
-            // Adicionar delay de 2-5 segundos entre mensagens da sequência para evitar spam (apenas entre mensagens reais)
-            if (i < content.sequence.length - 1 && content.sequence[i + 1].type !== 'wait') {
-              const sequenceDelay = Math.floor(Math.random() * 3000) + 2000; // 2-5 segundos
-              await new Promise(resolve => setTimeout(resolve, sequenceDelay));
-            }
-          }
-          result = lastResult;
-          break;
-
-        default:
-          throw new Error(`Unsupported message type for Evolution: ${messageType}`);
-      }
-
-      return {
-        success: true,
-        messageId: (result as any)?.key?.id || (result as any)?.id || null
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
   }
 
   private async sendMessageViaWaha(sessionName: string, phone: string, messageType: string, content: any, validatedChatId?: string, contactData?: any, tenantId?: string): Promise<{ success: boolean; messageId?: string; error?: string }> {

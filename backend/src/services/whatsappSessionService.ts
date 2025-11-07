@@ -6,7 +6,7 @@ export interface WhatsAppSessionData {
   name: string; // Nome real usado na API (ex: vendas_c52982e8)
   displayName?: string; // Nome exibido ao usuário (ex: vendas)
   status: 'WORKING' | 'SCAN_QR_CODE' | 'STOPPED' | 'FAILED';
-  provider: 'WAHA' | 'EVOLUTION' | 'QUEPASA';
+  provider: 'WAHA';
   config?: any;
   me?: {
     id: string;
@@ -18,7 +18,6 @@ export interface WhatsAppSessionData {
   qrExpiresAt?: Date;
   assignedWorker?: string;
   tenantId?: string;
-  quepasaToken?: string;
 }
 
 export class WhatsAppSessionService {
@@ -44,7 +43,7 @@ export class WhatsAppSessionService {
       name: session.name,
       displayName: session.displayName || session.name,
       status: session.status,
-      provider: session.provider as 'WAHA' | 'EVOLUTION' | 'QUEPASA',
+      provider: session.provider as 'WAHA',
       config: session.config ? JSON.parse(session.config) : {},
       me: session.meId ? {
         id: session.meId,

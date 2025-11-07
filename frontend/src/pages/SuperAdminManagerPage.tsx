@@ -128,11 +128,6 @@ interface Settings {
   id: string;
   wahaHost: string;
   wahaApiKey: string;
-  evolutionHost: string;
-  evolutionApiKey: string;
-  quepasaUrl?: string;
-  quepasaLogin?: string;
-  quepasaPassword?: string;
   logoUrl?: string;
   companyName?: string;
   faviconUrl?: string;
@@ -149,17 +144,6 @@ const settingsSchema = z.object({
   wahaApiKey: z.string().refine((val) => !val || val.length >= 10, {
     message: 'API Key deve ter pelo menos 10 caracteres ou estar vazia'
   }),
-  evolutionHost: z.string().refine((val) => !val || z.string().url().safeParse(val).success, {
-    message: 'Host deve ser uma URL válida ou vazio'
-  }),
-  evolutionApiKey: z.string().refine((val) => !val || val.length >= 10, {
-    message: 'API Key deve ter pelo menos 10 caracteres ou estar vazia'
-  }),
-  quepasaUrl: z.string().refine((val) => !val || z.string().url().safeParse(val).success, {
-    message: 'URL deve ser uma URL válida ou vazio'
-  }),
-  quepasaLogin: z.string().optional(),
-  quepasaPassword: z.string().optional(),
 });
 
 const generalSettingsSchema = z.object({
@@ -213,7 +197,7 @@ export function SuperAdminManagerPage() {
   });
   const [tenantSearchQuery, setTenantSearchQuery] = useState('');
 
-  const [activeModal, setActiveModal] = useState<'waha' | 'evolution' | 'quepasa' | null>(null);
+  const [activeModal, setActiveModal] = useState<'waha' | null>(null);
   const [integrationSettings, setIntegrationSettings] = useState<Settings | null>(null);
 
   // General settings states
@@ -341,11 +325,6 @@ export function SuperAdminManagerPage() {
         setIntegrationSettings(data);
         setValue('wahaHost', data.wahaHost);
         setValue('wahaApiKey', data.wahaApiKey);
-        setValue('evolutionHost', data.evolutionHost);
-        setValue('evolutionApiKey', data.evolutionApiKey);
-        setValue('quepasaUrl', data.quepasaUrl || '');
-        setValue('quepasaLogin', data.quepasaLogin || '');
-        setValue('quepasaPassword', data.quepasaPassword || '');
       }
     } catch (error) {
       console.error('Erro ao carregar configurações de integração:', error);
@@ -1784,58 +1763,6 @@ export function SuperAdminManagerPage() {
                   </span>
                 </div>
               </div>
-
-              {/* Evolution API Card */}
-              <div
-                onClick={() => setActiveModal('evolution')}
-                className="bg-gray-50 hover:bg-gray-100 border-2 border-gray-200 hover:border-green-300 rounded-lg p-6 cursor-pointer transition-all duration-200 flex flex-col items-center min-h-[180px] group"
-              >
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="w-32 h-18 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <img
-                      src="/assets/logos/evolutionapi.png"
-                      alt="Evolution API Logo"
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                </div>
-                <div className="mt-auto text-center">
-                  <p className="text-xs text-gray-500 mb-2">WhatsApp API Evolution</p>
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                    integrationSettings?.evolutionHost && integrationSettings?.evolutionApiKey
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {integrationSettings?.evolutionHost && integrationSettings?.evolutionApiKey ? 'Configurado' : 'Não configurado'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Quepasa Card */}
-              <div
-                onClick={() => setActiveModal('quepasa')}
-                className="bg-gray-50 hover:bg-gray-100 border-2 border-gray-200 hover:border-purple-300 rounded-lg p-6 cursor-pointer transition-all duration-200 flex flex-col items-center min-h-[180px] group"
-              >
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="w-28 h-16 flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <img
-                      src="/logoquepasa.png?v=2"
-                      alt="Quepasa Logo"
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                </div>
-                <div className="mt-auto text-center">
-                  <p className="text-xs text-gray-500 mb-2">WhatsApp API Quepasa</p>
-                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                    integrationSettings?.quepasaUrl && integrationSettings?.quepasaLogin && integrationSettings?.quepasaPassword
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {integrationSettings?.quepasaUrl && integrationSettings?.quepasaLogin && integrationSettings?.quepasaPassword ? 'Configurado' : 'Não configurado'}
-                  </span>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -2186,170 +2113,6 @@ export function SuperAdminManagerPage() {
         </div>
       )}
 
-      {/* Modal Evolution API */}
-      {activeModal === 'evolution' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">🚀 Configurar Evolution API</h3>
-              <button
-                onClick={() => setActiveModal(null)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleFormSubmit(onIntegrationSubmit)} className="space-y-4">
-              <div>
-                <label htmlFor="evolutionHost" className="block text-sm font-medium text-gray-700 mb-1">
-                  Host Evolution *
-                </label>
-                <input
-                  id="evolutionHost"
-                  type="url"
-                  {...register('evolutionHost')}
-                  placeholder="https://evolution.exemplo.com.br"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {errors.evolutionHost && (
-                  <p className="text-red-500 text-sm mt-1">
-                    {errors.evolutionHost.message}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="evolutionApiKey" className="block text-sm font-medium text-gray-700 mb-1">
-                  API Key Evolution *
-                </label>
-                <input
-                  id="evolutionApiKey"
-                  type="password"
-                  {...register('evolutionApiKey')}
-                  placeholder="sua-api-key-evolution-aqui"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {errors.evolutionApiKey && (
-                  <p className="text-red-500 text-sm mt-1">
-                    {errors.evolutionApiKey.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setActiveModal(null)}
-                  className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Salvando...' : 'Salvar'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Quepasa */}
-      {activeModal === 'quepasa' && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-2">
-                <img src="/logoquepasa.png?v=2" alt="Quepasa" className="w-6 h-6 object-contain" />
-                <h3 className="text-lg font-semibold text-gray-900">Configurar Quepasa</h3>
-              </div>
-              <button
-                onClick={() => setActiveModal(null)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleFormSubmit(onIntegrationSubmit)} className="space-y-4">
-              <div>
-                <label htmlFor="quepasaUrl" className="block text-sm font-medium text-gray-700 mb-1">
-                  URL do Quepasa *
-                </label>
-                <input
-                  id="quepasaUrl"
-                  type="url"
-                  {...register('quepasaUrl')}
-                  placeholder="https://quepasa.exemplo.com.br"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-                {errors.quepasaUrl && (
-                  <p className="text-red-500 text-sm mt-1">
-                    {errors.quepasaUrl.message}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="quepasaLogin" className="block text-sm font-medium text-gray-700 mb-1">
-                  Login *
-                </label>
-                <input
-                  id="quepasaLogin"
-                  type="text"
-                  {...register('quepasaLogin')}
-                  placeholder="admin"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-                {errors.quepasaLogin && (
-                  <p className="text-red-500 text-sm mt-1">
-                    {errors.quepasaLogin.message}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="quepasaPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                  Senha *
-                </label>
-                <input
-                  id="quepasaPassword"
-                  type="password"
-                  {...register('quepasaPassword')}
-                  placeholder="••••••••••••••••"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-                {errors.quepasaPassword && (
-                  <p className="text-red-500 text-sm mt-1">
-                    {errors.quepasaPassword.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setActiveModal(null)}
-                  className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Salvando...' : 'Salvar'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -98,11 +98,6 @@ model GlobalSettings {
   singleton       Boolean  @default(true) @unique // Ensures only one record
   wahaHost        String   @default("") @map("waha_host")
   wahaApiKey      String   @default("") @map("waha_api_key")
-  evolutionHost   String   @default("") @map("evolution_host")
-  evolutionApiKey String   @default("") @map("evolution_api_key")
-  quepasaUrl      String   @default("") @map("quepasa_url")
-  quepasaLogin    String   @default("") @map("quepasa_login")
-  quepasaPassword String   @default("") @map("quepasa_password")
   logoUrl         String?  @map("logo_url")
   faviconUrl      String?  @map("favicon_url")
   iconUrl         String?  @map("icon_url")
@@ -174,7 +169,6 @@ model WhatsAppSession {
   criadoEm       DateTime   @default(now()) @map("criado_em")
   atualizadoEm   DateTime   @updatedAt @map("atualizado_em")
   provider       WhatsAppProvider     @default(WAHA)
-  quepasaToken   String?    @map("quepasa_token") // Token único gerado para cada sessão Quepasa
   campaigns      Campaign[]
 
   // Relations
@@ -530,8 +524,6 @@ enum IntegrationType {
 
 enum WhatsAppProvider {
   WAHA
-  EVOLUTION
-  QUEPASA
 }
 
 // Settings model is now split into GlobalSettings and TenantSettings
