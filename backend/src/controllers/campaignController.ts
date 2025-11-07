@@ -620,11 +620,12 @@ export const getCampaignReport = async (req: AuthenticatedRequest, res: Response
 // Get available contact tags (categories)
 export const getContactTags = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // Buscar categorias usando CategoryService
-    const categoriesResponse = await CategoryService.getCategories();
+    // Buscar todas as categorias usando CategoryService com tenant isolation
+    const tenantId = req.tenantId;
+    const categories = await CategoryService.getAllCategories(tenantId);
 
     // Retornar array com id e nome das categorias
-    const tags = categoriesResponse.categories.map((categoria: any) => ({
+    const tags = categories.map((categoria: any) => ({
       id: categoria.id,
       nome: categoria.nome
     }));

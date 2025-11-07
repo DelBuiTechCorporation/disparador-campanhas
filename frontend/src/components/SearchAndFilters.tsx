@@ -29,8 +29,8 @@ export function SearchAndFilters({
 
   const loadCategories = async () => {
     try {
-      const response = await apiService.getCategories();
-      setCategories(response.categories || []);
+      const categories = await apiService.getAllCategories();
+      setCategories(categories || []);
     } catch (error) {
       console.error('Erro ao carregar categorias:', error);
     }

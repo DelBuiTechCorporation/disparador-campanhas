@@ -37,9 +37,8 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
 
   const loadCategories = async () => {
     try {
-      const response = await apiService.getCategories();
-      const categoriesData = response.categories || [];
-      setCategories(categoriesData);
+      const categoriesData = await apiService.getAllCategories();
+      setCategories(categoriesData || []);
     } catch (error) {
       console.error('Erro ao carregar categorias:', error);
       toast.error('Erro ao carregar categorias');

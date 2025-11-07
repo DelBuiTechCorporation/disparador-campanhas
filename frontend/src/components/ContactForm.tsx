@@ -55,17 +55,8 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
 
   const loadCategories = async () => {
     try {
-      const token = localStorage.getItem('auth_token');
-      const response = await fetch('/api/categorias', {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setCategories(data.categories || []);
-      }
+      const categories = await apiService.getAllCategories();
+      setCategories(categories || []);
     } catch (error) {
       console.error('Erro ao carregar categorias:', error);
     } finally {

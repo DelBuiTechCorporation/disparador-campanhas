@@ -21,11 +21,18 @@ export function useCategories(params: UseCategoriesParams = {}) {
       setLoading(true);
       setError(null);
 
-      const response: CategoriesResponse = await apiService.getCategories(params);
-
-      setCategories(response.categories);
-      setTotal(response.total);
-      setTotalPages(response.totalPages);
+      // Se não há parâmetros de paginação, buscar todas as categorias
+      if (!params.page && !params.pageSize && !params.search) {
+        const allCategories = await apiService.getAllCategories();
+        setCategories(allCategories);
+        setTotal(allCategories.length);
+        setTotalPages(1);
+      } else {
+        const response: CategoriesResponse = await apiService.getCategories(params);
+        setCategories(response.categories);
+        setTotal(response.total);
+        setTotalPages(response.totalPages);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar categorias';
       setError(errorMessage);
