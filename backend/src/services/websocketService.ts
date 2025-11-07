@@ -216,7 +216,7 @@ export class WebSocketService {
   public async notifyUser(userId: string, notification: {
     title: string;
     message: string;
-    type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CAMPAIGN' | 'BACKUP' | 'SYSTEM';
+    type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CAMPAIGN' | 'SYSTEM';
     data?: any;
   }): Promise<void> {
     try {
@@ -260,7 +260,7 @@ export class WebSocketService {
   public async notifyTenant(tenantId: string, notification: {
     title: string;
     message: string;
-    type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CAMPAIGN' | 'BACKUP' | 'SYSTEM';
+    type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CAMPAIGN' | 'SYSTEM';
     data?: any;
   }): Promise<void> {
     try {
@@ -284,7 +284,7 @@ export class WebSocketService {
   public async notifySuperAdmins(notification: {
     title: string;
     message: string;
-    type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CAMPAIGN' | 'BACKUP' | 'SYSTEM';
+    type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' | 'CAMPAIGN' | 'SYSTEM';
     data?: any;
   }): Promise<void> {
     try {
@@ -357,7 +357,7 @@ export class WebSocketService {
 
   // Emite status do sistema para SuperAdmins
   public emitSystemStatus(status: {
-    type: 'backup' | 'campaign' | 'system' | 'database';
+    type: 'campaign' | 'system' | 'database';
     message: string;
     status: 'success' | 'error' | 'warning' | 'info';
     data?: any;

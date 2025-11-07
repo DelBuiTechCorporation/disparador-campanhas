@@ -3,7 +3,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'react-hot-toast';
-import { SystemBackup } from '../components/SystemBackup';
 import { AnalyticsDashboard } from '../components/AnalyticsDashboard';
 import { useSettings } from '../hooks/useSettings';
 
@@ -98,32 +97,6 @@ interface SystemStats {
   };
 }
 
-interface BackupInfo {
-  tenantId: string;
-  tenantSlug: string;
-  size: number;
-  createdAt: string;
-  status: 'success' | 'failed' | 'in_progress';
-  error?: string;
-}
-
-interface BackupStats {
-  totalTenants: number;
-  totalBackups: number;
-  totalSize: number;
-  scheduledJobs: number;
-  tenantStats: {
-    tenantId: string;
-    tenantSlug: string;
-    tenantName: string;
-    backupCount: number;
-    totalSize: number;
-    lastBackup: string | null;
-    isScheduled: boolean;
-  }[];
-}
-
-
 interface Settings {
   id: string;
   wahaHost: string;
@@ -160,13 +133,11 @@ type GeneralSettingsFormData = z.infer<typeof generalSettingsSchema>;
 
 
 export function SuperAdminManagerPage() {
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'integrations' | 'tenants' | 'users' | 'backup'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'integrations' | 'tenants' | 'users'>('general');
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
-  const [backupStats, setBackupStats] = useState<BackupStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [backupLoading, setBackupLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -556,14 +527,6 @@ export function SuperAdminManagerPage() {
         if (response.ok) {
           const data = await response.json();
           setUsers(data.data?.users || []);
-        }
-      } else if (activeTab === 'backup') {
-        const response = await fetch('/api/backup/stats', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setBackupStats(data.stats || null);
         }
       }
     } catch (error) {
@@ -1047,16 +1010,6 @@ export function SuperAdminManagerPage() {
             }`}
           >
             👥 Usuários
-          </button>
-          <button
-            onClick={() => setActiveTab('backup')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'backup'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            💾 Backup
           </button>
         </nav>
       </div>
@@ -1767,12 +1720,6 @@ export function SuperAdminManagerPage() {
           </div>
         </div>
       )}
-
-      {/* Backup Tab */}
-      {activeTab === 'backup' && (
-        <SystemBackup />
-      )}
-
 
       {/* General Settings Tab */}
       {activeTab === 'general' && (

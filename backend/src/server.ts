@@ -17,7 +17,6 @@ import usersRoutes from './routes/users';
 import mediaRoutes from './routes/mediaRoutes';
 import tenantRoutes from './routes/tenants';
 import userTenantsRoutes from './routes/userTenants';
-import backupRoutes from './routes/backup';
 import { systemRoutes } from './routes/system';
 import alertsRoutes from './routes/alerts';
 import analyticsRoutes from './routes/analytics';
@@ -31,7 +30,6 @@ import chatwootRoutes from './routes/chatwootRoutes';
 import { authMiddleware } from './middleware/auth';
 import './services/campaignSchedulerService'; // Inicializar scheduler
 import { initializeAlertsMonitoring } from './services/alertsMonitoringService'; // Inicializar monitoramento de alertas
-import { initializeBackupService } from './services/backupService'; // Inicializar serviço de backup
 import { websocketService } from './services/websocketService'; // Inicializar WebSocket
 import { automationService } from './services/automationService'; // Inicializar automação
 
@@ -134,7 +132,6 @@ app.use('/api/campaigns', authMiddleware, campaignRoutes);
 app.use('/api/users', authMiddleware, usersRoutes);
 app.use('/api/tenants', authMiddleware, tenantRoutes); // SUPERADMIN only
 app.use('/api/user-tenants', authMiddleware, userTenantsRoutes);
-app.use('/api/backup', authMiddleware, backupRoutes); // Backup management
 app.use('/api/system', authMiddleware, systemRoutes); // SUPERADMIN only - System stats and monitoring
 app.use('/api/alerts', authMiddleware, alertsRoutes); // Alerts management
 app.use('/api/analytics', authMiddleware, analyticsRoutes); // Analytics and reporting per tenant
@@ -161,7 +158,4 @@ server.listen(PORT, () => {
 
   // Initialize alerts monitoring service
   initializeAlertsMonitoring();
-
-  // Initialize backup service
-  initializeBackupService();
 });

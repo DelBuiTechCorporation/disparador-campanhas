@@ -6,6 +6,7 @@ class ApiService {
   private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
     const token = localStorage.getItem('auth_token');
+    const selectedTenantId = localStorage.getItem('selected_tenant_id');
 
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -14,6 +15,11 @@ class ApiService {
 
     if (token) {
       (headers as Record<string, string>).Authorization = `Bearer ${token}`;
+    }
+
+    // Adicionar X-Tenant-Id header para SuperAdmin quando tenant está selecionado
+    if (selectedTenantId) {
+      (headers as Record<string, string>)['X-Tenant-Id'] = selectedTenantId;
     }
 
     // Usar AbortController com timeout de 30 segundos para evitar 524
@@ -161,10 +167,15 @@ class ApiService {
     formData.append('csv', file);
 
     const token = localStorage.getItem('auth_token');
+    const selectedTenantId = localStorage.getItem('selected_tenant_id');
     const headers: HeadersInit = {};
 
     if (token) {
       (headers as Record<string, string>).Authorization = `Bearer ${token}`;
+    }
+
+    if (selectedTenantId) {
+      (headers as Record<string, string>)['X-Tenant-Id'] = selectedTenantId;
     }
 
     const response = await fetch(`${API_BASE_URL}/csv/import`, {
@@ -183,10 +194,15 @@ class ApiService {
 
   async downloadCSVTemplate(): Promise<Blob> {
     const token = localStorage.getItem('auth_token');
+    const selectedTenantId = localStorage.getItem('selected_tenant_id');
     const headers: HeadersInit = {};
 
     if (token) {
       (headers as Record<string, string>).Authorization = `Bearer ${token}`;
+    }
+
+    if (selectedTenantId) {
+      (headers as Record<string, string>)['X-Tenant-Id'] = selectedTenantId;
     }
 
     const response = await fetch(`${API_BASE_URL}/csv/template`, {
