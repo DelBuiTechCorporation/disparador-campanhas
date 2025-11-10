@@ -89,6 +89,10 @@ class WebSocketService implements WebSocketServiceInterface {
       console.log('📢 Campaign update received:', data);
     });
 
+    this.socket.on('campaign_progress', (data) => {
+      console.log('📊 Campaign progress received (websocket service):', data);
+    });
+
     this.socket.on('notification', (data) => {
       console.log('🔔 Notification received:', data);
     });

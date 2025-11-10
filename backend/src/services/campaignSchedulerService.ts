@@ -313,6 +313,7 @@ class CampaignSchedulerService {
         // Enviar countdown inicial via WebSocket
         if (campaign.tenantId && websocketService.isInitialized) {
           const progress = Math.round((campaign.sentCount / campaign.totalContacts) * 100);
+          console.log(`📡 Emitindo campaign_progress com nextShotIn=${randomDelaySec}s para campanha ${campaign.id}`);
           websocketService.emitCampaignProgress(campaign.tenantId, {
             campaignId: campaign.id,
             campaignName: campaign.nome,
@@ -323,6 +324,8 @@ class CampaignSchedulerService {
             status: campaign.status,
             nextShotIn: randomDelaySec
           } as any);
+        } else {
+          console.log(`⚠️ WebSocket não inicializado ou tenantId ausente - não será enviado nextShotIn`);
         }
         
         await new Promise(resolve => setTimeout(resolve, randomDelayMs));
