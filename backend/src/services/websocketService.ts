@@ -54,9 +54,19 @@ export class WebSocketService {
 
         const decoded = jwt.verify(token as string, process.env.JWT_SECRET || 'defaultsecret') as any;
 
+        console.log('🔍 JWT decoded:', decoded);
+
+        // O JWT pode ter userId ao invés de id
+        const userId = decoded.id || decoded.userId;
+
+        if (!userId) {
+          console.error('❌ JWT não contém id nem userId:', decoded);
+          return next(new Error('Token inválido - ID não encontrado'));
+        }
+
         // Busca dados do usuário no banco
         const user = await prisma.user.findUnique({
-          where: { id: decoded.id },
+          where: { id: userId },
           select: {
             id: true,
             tenantId: true,

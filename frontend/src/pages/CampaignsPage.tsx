@@ -171,6 +171,7 @@ export function CampaignsPage() {
 
         // Update countdown if nextShotIn is provided
         if (data.nextShotIn !== undefined) {
+          console.log(`⏱️ Atualizando countdown para campanha ${data.campaignId}: ${data.nextShotIn}s`);
           setNextShotCountdown(prev => ({
             ...prev,
             [data.campaignId]: data.nextShotIn
