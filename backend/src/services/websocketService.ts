@@ -49,20 +49,24 @@ export class WebSocketService {
         const token = socket.handshake.auth.token || socket.handshake.query.token;
 
         if (!token) {
+          console.error('❌ WebSocket: Token não fornecido');
           return next(new Error('Token não fornecido'));
         }
 
+        console.log('🔍 WebSocket: Token recebido, verificando...');
         const decoded = jwt.verify(token as string, process.env.JWT_SECRET || 'defaultsecret') as any;
 
-        console.log('🔍 JWT decoded:', decoded);
+        console.log('🔍 JWT decoded:', JSON.stringify(decoded, null, 2));
 
         // O JWT pode ter userId ao invés de id
         const userId = decoded.id || decoded.userId;
 
         if (!userId) {
-          console.error('❌ JWT não contém id nem userId:', decoded);
+          console.error('❌ JWT não contém id nem userId. Decoded:', JSON.stringify(decoded, null, 2));
           return next(new Error('Token inválido - ID não encontrado'));
         }
+
+        console.log('✅ UserId extraído:', userId);
 
         // Busca dados do usuário no banco
         const user = await prisma.user.findUnique({

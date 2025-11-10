@@ -305,9 +305,27 @@ class CampaignSchedulerService {
       if (campaign.randomDelay > 0) {
         const minDelay = campaign.minRandomDelay || 0;
         const maxDelay = campaign.randomDelay;
-        const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay) * 1000;
-        console.log(`Applying random delay of ${randomDelay}ms (${minDelay}s-${maxDelay}s) for message ${message.id}`);
-        await new Promise(resolve => setTimeout(resolve, randomDelay));
+        const randomDelayMs = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay) * 1000;
+        const randomDelaySec = Math.floor(randomDelayMs / 1000);
+        
+        console.log(`Applying random delay of ${randomDelayMs}ms (${minDelay}s-${maxDelay}s) for message ${message.id}`);
+        
+        // Enviar countdown inicial via WebSocket
+        if (campaign.tenantId && websocketService.isInitialized) {
+          const progress = Math.round((campaign.sentCount / campaign.totalContacts) * 100);
+          websocketService.emitCampaignProgress(campaign.tenantId, {
+            campaignId: campaign.id,
+            campaignName: campaign.nome,
+            progress,
+            totalContacts: campaign.totalContacts,
+            sentCount: campaign.sentCount,
+            failedCount: campaign.failedCount,
+            status: campaign.status,
+            nextShotIn: randomDelaySec
+          } as any);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, randomDelayMs));
       }
 
       // VERIFICAR NOVAMENTE SE A CAMPANHA AINDA ESTÁ EM RUNNING (após delay, pode ter sido pausada)
