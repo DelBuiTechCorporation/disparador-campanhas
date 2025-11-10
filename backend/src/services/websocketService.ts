@@ -119,7 +119,10 @@ export class WebSocketService {
 
         // Enviar estado atual das campanhas em execução quando conectar
         if (socket.user.tenantId) {
-          this.emitCurrentCampaignsState(socket, socket.user.tenantId);
+          console.log(`🔍 Tentando enviar estado de campanhas para tenant ${socket.user.tenantId}`);
+          this.emitCurrentCampaignsState(socket, socket.user.tenantId).catch(err => {
+            console.error('❌ Erro ao emitir estado das campanhas:', err);
+          });
         }
       }
 
@@ -391,6 +394,8 @@ export class WebSocketService {
   // Emite estado atual das campanhas em execução quando usuário conecta
   private async emitCurrentCampaignsState(socket: any, tenantId: string): Promise<void> {
     try {
+      console.log(`🔍 [emitCurrentCampaignsState] Iniciando para tenant ${tenantId}`);
+      
       // Buscar campanhas RUNNING do tenant
       const runningCampaigns = await prisma.campaign.findMany({
         where: {
@@ -407,6 +412,8 @@ export class WebSocketService {
         }
       });
 
+      console.log(`🔍 [emitCurrentCampaignsState] Encontradas ${runningCampaigns.length} campanhas RUNNING`);
+
       if (runningCampaigns.length === 0) {
         return;
       }
@@ -415,7 +422,10 @@ export class WebSocketService {
 
       // Importar campaignSchedulerService para obter countdowns
       const { campaignSchedulerService } = await import('./campaignSchedulerService');
+      console.log(`🔍 [emitCurrentCampaignsState] campaignSchedulerService importado:`, typeof campaignSchedulerService);
+      
       const countdowns = campaignSchedulerService.getAllCampaignCountdowns();
+      console.log(`🔍 [emitCurrentCampaignsState] Countdowns obtidos:`, countdowns.size);
 
       // Emitir estado de cada campanha
       for (const campaign of runningCampaigns) {
