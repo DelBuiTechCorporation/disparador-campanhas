@@ -286,10 +286,12 @@ class CampaignSchedulerService {
       const { name: selectedSession, provider } = selectedSessionInfo;
       console.log(`🚀 Distribuição sequencial - Usando sessão: ${selectedSession} (${provider}) para mensagem ${message.id}`);
 
-      // Aplicar delay randomizado
+      // Aplicar delay randomizado com intervalo min-max
       if (campaign.randomDelay > 0) {
-        const randomDelay = Math.floor(Math.random() * campaign.randomDelay * 1000);
-        console.log(`Applying random delay of ${randomDelay}ms for message ${message.id}`);
+        const minDelay = campaign.minRandomDelay || 0;
+        const maxDelay = campaign.randomDelay;
+        const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay) * 1000;
+        console.log(`Applying random delay of ${randomDelay}ms (${minDelay}s-${maxDelay}s) for message ${message.id}`);
         await new Promise(resolve => setTimeout(resolve, randomDelay));
       }
 

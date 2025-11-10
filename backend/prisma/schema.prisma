@@ -185,7 +185,8 @@ model Campaign {
   sessionName      String?           @map("session_name")
   messageType      String            @map("message_type")
   messageContent   String            @map("message_content")
-  randomDelay      Int               @map("random_delay")
+  randomDelay      Int               @map("random_delay") // Delay máximo em segundos
+  minRandomDelay   Int               @default(0) @map("min_random_delay") // Delay mínimo em segundos
   startImmediately Boolean           @map("start_immediately")
   scheduledFor     DateTime?         @map("scheduled_for")
   status           String            @default("PENDING")

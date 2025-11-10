@@ -15,7 +15,8 @@ export const campaignValidation = [
   body('sessionNames').isArray({ min: 1 }).withMessage('Pelo menos uma sessão WhatsApp deve ser selecionada'),
   body('messageType').isIn(['text', 'image', 'video', 'audio', 'document', 'sequence', 'openai', 'groq', 'wait']).withMessage('Tipo de mensagem inválido'),
   body('messageContent').notEmpty().withMessage('Conteúdo da mensagem é obrigatório'),
-  body('randomDelay').isInt({ min: 0 }).withMessage('Delay deve ser um número positivo'),
+  body('randomDelay').isInt({ min: 0 }).withMessage('Delay máximo deve ser um número positivo'),
+  body('minRandomDelay').optional().isInt({ min: 0 }).withMessage('Delay mínimo deve ser um número positivo'),
   body('startImmediately').isBoolean().withMessage('StartImmediately deve ser boolean'),
   body('scheduledFor').optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage('Data de agendamento deve ser válida')
   ,
@@ -158,6 +159,7 @@ export const createCampaign = async (req: AuthenticatedRequest, res: Response) =
       messageType,
       messageContent,
       randomDelay,
+      minRandomDelay = 0,
       startImmediately,
       scheduledFor,
       startPaused,
@@ -206,6 +208,11 @@ export const createCampaign = async (req: AuthenticatedRequest, res: Response) =
       return res.status(400).json({ error: 'Nenhum contato encontrado com as categorias selecionadas' });
     }
 
+    // Validar intervalo de randomização
+    if (minRandomDelay > randomDelay) {
+      return res.status(400).json({ error: 'Delay mínimo não pode ser maior que o delay máximo' });
+    }
+
     // Determinar status inicial considerando startPaused
     let initialStatus = 'PENDING';
     if (startPaused) {
@@ -224,6 +231,7 @@ export const createCampaign = async (req: AuthenticatedRequest, res: Response) =
         messageType,
         messageContent: JSON.stringify(messageContent),
         randomDelay,
+        minRandomDelay,
         startImmediately,
         scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
         totalContacts: filteredContacts.length,

@@ -19,6 +19,7 @@ interface Campaign {
   messageType: string;
   messageContent: MessageContent;
   randomDelay: number;
+  minRandomDelay?: number;
   startImmediately: boolean;
   scheduledFor: string | null;
   status: string;
@@ -61,6 +62,7 @@ interface CampaignFormData {
   messageType: string;
   messageContent: MessageContent;
   randomDelay: number;
+  minRandomDelay: number;
   startImmediately: boolean;
   scheduledFor: string;
   businessHours?: any;
@@ -98,7 +100,8 @@ export function CampaignsPage() {
     sessionName: '',
     messageType: 'sequence',
     messageContent: { sequence: [] as Array<{ type: string; content: any }> } as MessageContent,
-    randomDelay: 30,
+    randomDelay: 60,
+    minRandomDelay: 30,
     startImmediately: true,
     scheduledFor: '',
     // Business hours config set during creation
@@ -205,6 +208,11 @@ export function CampaignsPage() {
       return;
     }
 
+    if (formData.minRandomDelay > formData.randomDelay) {
+      toast.error('O delay mínimo não pode ser maior que o máximo');
+      return;
+    }
+
     if (!('sequence' in formData.messageContent) || formData.messageContent.sequence.length === 0) {
       toast.error('Adicione pelo menos uma mensagem à campanha');
       return;
@@ -272,7 +280,8 @@ export function CampaignsPage() {
       sessionName: '',
       messageType: 'sequence',
       messageContent: { sequence: [] },
-      randomDelay: 30,
+      randomDelay: 60,
+      minRandomDelay: 30,
       startImmediately: true,
       scheduledFor: ''
     });
@@ -938,21 +947,54 @@ export function CampaignsPage() {
                     </div>
 
                     {/* Configuração de Envio */}
-                    <div>
+                    <div className="space-y-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Tempo de Randomização (segundos)
+                        Intervalo de Randomização (segundos)
                       </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="300"
-                        value={formData.randomDelay}
-                        onChange={(e) => setFormData(prev => ({ ...prev, randomDelay: parseInt(e.target.value) }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        ⏱️ Intervalo aleatório entre envios (0-{formData.randomDelay}s) para evitar bloqueios
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            Mínimo
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formData.minRandomDelay}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value) || 0;
+                              setFormData(prev => ({ ...prev, minRandomDelay: value }));
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">
+                            Máximo
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formData.randomDelay}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value) || 0;
+                              setFormData(prev => ({ ...prev, randomDelay: value }));
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                      
+                      <p className="text-xs text-gray-500 mt-2">
+                        ⏱️ Intervalo aleatório entre {formData.minRandomDelay}s e {formData.randomDelay}s entre cada envio para evitar bloqueios do WhatsApp
                       </p>
+                      
+                      {formData.minRandomDelay > formData.randomDelay && (
+                        <p className="text-xs text-red-600 mt-1">
+                          ⚠️ O valor mínimo não pode ser maior que o máximo
+                        </p>
+                      )}
                     </div>
 
                     {/* Data de Envio */}
