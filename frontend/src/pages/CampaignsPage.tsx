@@ -137,22 +137,8 @@ export function CampaignsPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Initialize countdown when campaigns load
-  useEffect(() => {
-    const runningCampaigns = campaigns.filter(c => c.status === 'RUNNING');
-    const newCountdowns: { [key: string]: number } = {};
-    
-    runningCampaigns.forEach(campaign => {
-      // Estimate based on max delay (randomDelay is the max)
-      if (!nextShotCountdown[campaign.id]) {
-        newCountdowns[campaign.id] = campaign.randomDelay || 60;
-      }
-    });
-
-    if (Object.keys(newCountdowns).length > 0) {
-      setNextShotCountdown(prev => ({ ...prev, ...newCountdowns }));
-    }
-  }, [campaigns]);
+  // NÃO inicializar countdown automaticamente - apenas via WebSocket
+  // O countdown só aparece quando receber nextShotIn do backend
 
   // Listen to WebSocket for real-time campaign updates
   useEffect(() => {
