@@ -119,7 +119,15 @@ export class WebSocketService {
 
         // Enviar estado atual das campanhas em execução quando conectar
         console.log(`🔍 DEBUG: socket.user.tenantId = ${socket.user.tenantId}, typeof = ${typeof socket.user.tenantId}`);
-        if (socket.user.tenantId) {
+        
+        // Para SUPERADMIN, buscar campanhas de TODOS os tenants ou usar tenant do contexto
+        if (socket.user.role === 'SUPERADMIN') {
+          // SUPERADMIN vê todas as campanhas RUNNING
+          console.log(`🔐 SUPERADMIN conectado - enviando estado de todas as campanhas RUNNING`);
+          this.emitCurrentCampaignsState(socket, null).catch((err: any) => {
+            console.error('❌ Erro ao emitir estado das campanhas (SUPERADMIN):', err);
+          });
+        } else if (socket.user.tenantId) {
           console.log(`🔍 Tentando enviar estado de campanhas para tenant ${socket.user.tenantId}`);
           this.emitCurrentCampaignsState(socket, socket.user.tenantId).catch(err => {
             console.error('❌ Erro ao emitir estado das campanhas:', err);
@@ -398,14 +406,16 @@ export class WebSocketService {
   }
 
   // Emite estado atual das campanhas em execução quando usuário conecta
-  private async emitCurrentCampaignsState(socket: any, tenantId: string): Promise<void> {
+  private async emitCurrentCampaignsState(socket: any, tenantId: string | null): Promise<void> {
     try {
-      console.log(`🔍 [emitCurrentCampaignsState] Iniciando para tenant ${tenantId}`);
+      console.log(`🔍 [emitCurrentCampaignsState] Iniciando para tenant ${tenantId || 'TODOS'}`);
       
-      // Buscar campanhas RUNNING do tenant
+      // Buscar campanhas RUNNING do tenant (ou todas se tenantId null)
       const runningCampaigns = await prisma.campaign.findMany({
-        where: {
+        where: tenantId ? {
           tenantId,
+          status: 'RUNNING'
+        } : {
           status: 'RUNNING'
         },
         select: {
