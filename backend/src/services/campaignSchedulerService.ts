@@ -311,16 +311,19 @@ class CampaignSchedulerService {
         
         console.log(`Applying random delay of ${randomDelayMs}ms (${minDelay}s-${maxDelay}s) for message ${message.id}`);
         
+        // Calcular timestamp do próximo disparo
+        const nextShotAt = Date.now() + randomDelayMs;
+        
         // Armazenar timestamp do próximo disparo
         this.campaignNextShot.set(campaign.id, {
-          timestamp: Date.now() + randomDelayMs,
+          timestamp: nextShotAt,
           delaySec: randomDelaySec
         });
         
-        // Enviar countdown inicial via WebSocket
+        // Enviar countdown inicial via WebSocket COM TIMESTAMP
         if (campaign.tenantId && websocketService.isInitialized) {
           const progress = Math.round((campaign.sentCount / campaign.totalContacts) * 100);
-          console.log(`📡 Emitindo campaign_progress com nextShotIn=${randomDelaySec}s para campanha ${campaign.id}`);
+          console.log(`📡 Emitindo campaign_progress com nextShotAt=${nextShotAt} para campanha ${campaign.id}`);
           websocketService.emitCampaignProgress(campaign.tenantId, {
             campaignId: campaign.id,
             campaignName: campaign.nome,
@@ -329,10 +332,10 @@ class CampaignSchedulerService {
             sentCount: campaign.sentCount,
             failedCount: campaign.failedCount,
             status: campaign.status,
-            nextShotIn: randomDelaySec
+            nextShotAt // TIMESTAMP ao invés de segundos
           } as any);
         } else {
-          console.log(`⚠️ WebSocket não inicializado ou tenantId ausente - não será enviado nextShotIn`);
+          console.log(`⚠️ WebSocket não inicializado ou tenantId ausente - não será enviado nextShotAt`);
         }
         
         await new Promise(resolve => setTimeout(resolve, randomDelayMs));
@@ -492,11 +495,12 @@ class CampaignSchedulerService {
 
         console.log(`Message sent successfully to ${message.contactPhone}`);
 
-        // Notificar via WebSocket com countdown do próximo disparo
+        // Notificar via WebSocket com timestamp do próximo disparo
         if (campaign.tenantId && websocketService.isInitialized) {
           const minDelay = campaign.minRandomDelay || 0;
           const maxDelay = campaign.randomDelay;
-          const nextShotIn = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
+          const nextDelaySec = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
+          const nextShotAt = Date.now() + (nextDelaySec * 1000);
           
           const updatedSentCount = campaign.sentCount + 1;
           const progress = Math.round((updatedSentCount / campaign.totalContacts) * 100);
@@ -509,7 +513,7 @@ class CampaignSchedulerService {
             sentCount: updatedSentCount,
             failedCount: campaign.failedCount,
             status: campaign.status,
-            nextShotIn // segundos até o próximo disparo
+            nextShotAt // timestamp do próximo disparo
           } as any);
         }
       } else {

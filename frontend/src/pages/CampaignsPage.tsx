@@ -156,26 +156,22 @@ export function CampaignsPage() {
             : c
         ));
 
-        // Update countdown if nextShotIn is provided
-        if (data.nextShotIn !== undefined) {
-          console.log(`⏱️ Atualizando countdown para campanha ${data.campaignId}: ${data.nextShotIn}s`);
-          console.log(`⏱️ Estado atual nextShotCountdown:`, nextShotCountdown);
-          setNextShotCountdown(prev => {
-            const newState = {
-              ...prev,
-              [data.campaignId]: data.nextShotIn
-            };
-            console.log(`⏱️ Novo estado nextShotCountdown:`, newState);
-            return newState;
-          });
+        // Update countdown if nextShotAt is provided (timestamp)
+        if (data.nextShotAt !== undefined) {
+          const remainingSec = Math.max(0, Math.floor((data.nextShotAt - Date.now()) / 1000));
+          console.log(`⏱️ Atualizando countdown para campanha ${data.campaignId}: ${remainingSec}s (timestamp: ${data.nextShotAt})`);
+          setNextShotCountdown(prev => ({
+            ...prev,
+            [data.campaignId]: remainingSec
+          }));
           
           // Debug toast
-          toast(`⏱️ Countdown: ${data.nextShotIn}s para campanha ${data.campaignName}`, {
+          toast(`⏱️ Próximo: ${remainingSec}s`, {
             icon: '⏱️',
-            duration: 3000
+            duration: 2000
           });
         } else {
-          console.log(`⚠️ nextShotIn não fornecido no evento campaign_progress`);
+          console.log(`⚠️ nextShotAt não fornecido no evento campaign_progress`);
         }
       }
     };

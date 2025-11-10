@@ -118,11 +118,14 @@ export class WebSocketService {
         this.emitUserCount(socket.user.tenantId);
 
         // Enviar estado atual das campanhas em execução quando conectar
+        console.log(`🔍 DEBUG: socket.user.tenantId = ${socket.user.tenantId}, typeof = ${typeof socket.user.tenantId}`);
         if (socket.user.tenantId) {
           console.log(`🔍 Tentando enviar estado de campanhas para tenant ${socket.user.tenantId}`);
           this.emitCurrentCampaignsState(socket, socket.user.tenantId).catch(err => {
             console.error('❌ Erro ao emitir estado das campanhas:', err);
           });
+        } else {
+          console.log(`⚠️ Usuário sem tenantId, não enviando estado de campanhas`);
         }
       }
 
@@ -335,11 +338,14 @@ export class WebSocketService {
     sentCount: number;
     failedCount: number;
     status: string;
-    nextShotIn?: number; // Segundos até o próximo disparo
+    nextShotAt?: number; // Timestamp (Date.now()) do próximo disparo
   }): void {
     if (this.io) {
       this.io.to(`tenant_${tenantId}`).emit('campaign_progress', campaignData);
-      console.log(`📊 Progresso de campanha enviado para tenant ${tenantId}: ${campaignData.progress}%${campaignData.nextShotIn ? ` (próximo em ${campaignData.nextShotIn}s)` : ''}`);
+      const nextShotInfo = campaignData.nextShotAt 
+        ? ` (próximo em ${Math.floor((campaignData.nextShotAt - Date.now()) / 1000)}s)` 
+        : '';
+      console.log(`📊 Progresso de campanha enviado para tenant ${tenantId}: ${campaignData.progress}%${nextShotInfo}`);
     }
   }
 
@@ -430,7 +436,7 @@ export class WebSocketService {
       // Emitir estado de cada campanha
       for (const campaign of runningCampaigns) {
         const progress = Math.round((campaign.sentCount / campaign.totalContacts) * 100);
-        const nextShotIn = countdowns.get(campaign.id);
+        const nextShot = countdowns.get(campaign.id);
         
         const payload: any = {
           campaignId: campaign.id,
@@ -442,10 +448,11 @@ export class WebSocketService {
           status: campaign.status
         };
 
-        // Incluir nextShotIn apenas se existir
-        if (nextShotIn !== undefined && nextShotIn > 0) {
-          payload.nextShotIn = nextShotIn;
-          console.log(`⏱️ Campanha ${campaign.id}: próximo disparo em ${nextShotIn}s`);
+        // Incluir nextShotAt se existir (em vez de nextShotIn)
+        if (nextShot !== undefined && nextShot > 0) {
+          // nextShot é o countdown em segundos, converter para timestamp
+          payload.nextShotAt = Date.now() + (nextShot * 1000);
+          console.log(`⏱️ Campanha ${campaign.id}: próximo disparo em ${nextShot}s (timestamp: ${payload.nextShotAt})`);
         }
         
         socket.emit('campaign_progress', payload);
