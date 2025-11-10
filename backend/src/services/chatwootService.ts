@@ -290,12 +290,14 @@ export class ChatwootService {
       console.log(`🏁 Carregamento de tags finalizado - Total: ${tagsAccumulated.size} tags únicas`);
       
       // Salvar conversas no cache
-      conversationsCache.set(tenantId, {
+      const cacheKey = tenantId;
+      conversationsCache.set(cacheKey, {
         data: conversations,
         timestamp: Date.now(),
         ttl: CACHE_TTL
       });
-      console.log(`💾 Cache atualizado: ${conversations.length} conversas armazenadas (válido por 10 minutos)`);
+      console.log(`💾 Cache atualizado para tenant ${tenantId}: ${conversations.length} conversas armazenadas (válido por 10 minutos)`);
+      console.log(`💾 Cache keys atuais:`, Array.from(conversationsCache.keys()));
       
       syncInProgress.delete(tenantId);
 
@@ -353,6 +355,16 @@ export class ChatwootService {
       let pagesFetched = 0;
       let hasWarning = false;
       const warnings: string[] = [];
+
+      console.log(`🔍 Verificando cache para tenant ${tenantId}...`);
+      console.log(`💾 Cache keys disponíveis:`, Array.from(conversationsCache.keys()));
+      console.log(`💾 Cache encontrado:`, cached ? 'SIM' : 'NÃO');
+      
+      if (cached) {
+        const age = Date.now() - cached.timestamp;
+        const remainingTTL = cached.ttl - age;
+        console.log(`💾 Cache age: ${Math.round(age / 1000)}s, TTL restante: ${Math.round(remainingTTL / 1000)}s`);
+      }
 
       if (cached && (Date.now() - cached.timestamp) < cached.ttl) {
         console.log(`📦 Usando conversas em cache (${cached.data.length} conversas, cache válido por mais ${Math.round((cached.ttl - (Date.now() - cached.timestamp)) / 1000)}s)`);

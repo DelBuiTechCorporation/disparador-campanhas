@@ -142,6 +142,7 @@ export function CampaignsPage() {
 
   // Listen to WebSocket for real-time campaign updates
   useEffect(() => {
+    console.log('🔌 Conectando ao WebSocket e registrando listener de campaign_progress...');
     websocketService.connect();
 
     const handleCampaignProgress = (data: any) => {
@@ -158,17 +159,32 @@ export function CampaignsPage() {
         // Update countdown if nextShotIn is provided
         if (data.nextShotIn !== undefined) {
           console.log(`⏱️ Atualizando countdown para campanha ${data.campaignId}: ${data.nextShotIn}s`);
-          setNextShotCountdown(prev => ({
-            ...prev,
-            [data.campaignId]: data.nextShotIn
-          }));
+          console.log(`⏱️ Estado atual nextShotCountdown:`, nextShotCountdown);
+          setNextShotCountdown(prev => {
+            const newState = {
+              ...prev,
+              [data.campaignId]: data.nextShotIn
+            };
+            console.log(`⏱️ Novo estado nextShotCountdown:`, newState);
+            return newState;
+          });
+          
+          // Debug toast
+          toast(`⏱️ Countdown: ${data.nextShotIn}s para campanha ${data.campaignName}`, {
+            icon: '⏱️',
+            duration: 3000
+          });
+        } else {
+          console.log(`⚠️ nextShotIn não fornecido no evento campaign_progress`);
         }
       }
     };
 
+    console.log('📡 Registrando listener para campaign_progress');
     websocketService.on('campaign_progress', handleCampaignProgress);
 
     return () => {
+      console.log('🔌 Removendo listener de campaign_progress');
       websocketService.off('campaign_progress', handleCampaignProgress);
     };
   }, []);
