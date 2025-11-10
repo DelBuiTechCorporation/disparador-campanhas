@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import { Header } from '../components/Header';
 import { BusinessHoursModal } from '../components/BusinessHoursModal';
 import { EditCampaignMessagesModal } from '../components/EditCampaignMessagesModal';
-import websocketService from '../services/websocket';
+import { websocketService } from '../services/websocket';
 
 type MessageContent =
   | { text: string }
