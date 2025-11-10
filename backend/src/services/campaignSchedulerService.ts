@@ -14,6 +14,7 @@ class CampaignSchedulerService {
   private intervalId: NodeJS.Timeout | null = null;
   private campaignSessionIndexes: Map<string, number> = new Map(); // Rastrear índice atual de cada campanha
   private processingCampaigns: Set<string> = new Set(); // Rastrear campanhas em processamento
+  private campaignNextShot: Map<string, { timestamp: number; delaySec: number }> = new Map(); // Armazenar próximo disparo
 
   start() {
     if (this.isRunning) {
@@ -309,6 +310,12 @@ class CampaignSchedulerService {
         const randomDelaySec = Math.floor(randomDelayMs / 1000);
         
         console.log(`Applying random delay of ${randomDelayMs}ms (${minDelay}s-${maxDelay}s) for message ${message.id}`);
+        
+        // Armazenar timestamp do próximo disparo
+        this.campaignNextShot.set(campaign.id, {
+          timestamp: Date.now() + randomDelayMs,
+          delaySec: randomDelaySec
+        });
         
         // Enviar countdown inicial via WebSocket
         if (campaign.tenantId && websocketService.isInitialized) {
@@ -884,6 +891,41 @@ class CampaignSchedulerService {
       console.error(`Error completing campaign ${campaignId}:`, error);
     }
   }
+
+  // Método para obter o countdown atual de uma campanha
+  getCampaignCountdown(campaignId: string): number | null {
+    const nextShot = this.campaignNextShot.get(campaignId);
+    if (!nextShot) return null;
+
+    const now = Date.now();
+    const remaining = Math.floor((nextShot.timestamp - now) / 1000);
+    
+    // Se já passou o tempo, remover do Map
+    if (remaining <= 0) {
+      this.campaignNextShot.delete(campaignId);
+      return null;
+    }
+
+    return remaining;
+  }
+
+  // Método para obter todos os countdowns ativos
+  getAllCampaignCountdowns(): Map<string, number> {
+    const countdowns = new Map<string, number>();
+    const now = Date.now();
+
+    for (const [campaignId, nextShot] of this.campaignNextShot.entries()) {
+      const remaining = Math.floor((nextShot.timestamp - now) / 1000);
+      if (remaining > 0) {
+        countdowns.set(campaignId, remaining);
+      } else {
+        // Limpar countdowns expirados
+        this.campaignNextShot.delete(campaignId);
+      }
+    }
+
+    return countdowns;
+  }
 }
 
 // Criar instância singleton
@@ -893,3 +935,4 @@ const campaignScheduler = new CampaignSchedulerService();
 campaignScheduler.start();
 
 export default campaignScheduler;
+export { campaignScheduler as campaignSchedulerService };

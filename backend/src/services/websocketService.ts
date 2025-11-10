@@ -413,20 +413,32 @@ export class WebSocketService {
 
       console.log(`📡 Enviando estado atual de ${runningCampaigns.length} campanha(s) para socket ${socket.id}`);
 
+      // Importar campaignSchedulerService para obter countdowns
+      const { campaignSchedulerService } = await import('./campaignSchedulerService');
+      const countdowns = campaignSchedulerService.getAllCampaignCountdowns();
+
       // Emitir estado de cada campanha
       for (const campaign of runningCampaigns) {
         const progress = Math.round((campaign.sentCount / campaign.totalContacts) * 100);
+        const nextShotIn = countdowns.get(campaign.id);
         
-        socket.emit('campaign_progress', {
+        const payload: any = {
           campaignId: campaign.id,
           campaignName: campaign.nome,
           progress,
           totalContacts: campaign.totalContacts,
           sentCount: campaign.sentCount,
           failedCount: campaign.failedCount,
-          status: campaign.status,
-          // Não enviar nextShotIn aqui pois não temos essa info no banco
-        });
+          status: campaign.status
+        };
+
+        // Incluir nextShotIn apenas se existir
+        if (nextShotIn !== undefined && nextShotIn > 0) {
+          payload.nextShotIn = nextShotIn;
+          console.log(`⏱️ Campanha ${campaign.id}: próximo disparo em ${nextShotIn}s`);
+        }
+        
+        socket.emit('campaign_progress', payload);
       }
     } catch (error) {
       console.error('Erro ao emitir estado das campanhas:', error);
