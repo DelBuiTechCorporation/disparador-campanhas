@@ -184,6 +184,9 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
         { id: 'import-toast', duration: 5000 }
       );
       
+      // Limpar cache após importação bem-sucedida
+      clearChatwootCache();
+      
       onSuccess();
       handleClose();
     } catch (error: any) {
@@ -220,9 +223,42 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
       tagEventSource.close();
       setTagEventSource(null);
     }
+    
+    // Limpar cache ao fechar o modal
+    clearChatwootCache();
+    
     setChatwootTags([]);
     setTagMappings([]);
     onClose();
+  };
+
+  const clearChatwootCache = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const selectedTenantId = localStorage.getItem('selected_tenant_id');
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
+
+      if (selectedTenantId) {
+        headers['X-Tenant-Id'] = selectedTenantId;
+      }
+
+      await fetch('/api/chatwoot/cache', {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({
+          tenantId: selectedTenantId // Para SUPERADMIN
+        })
+      });
+
+      console.log('🗑️ Cache do Chatwoot limpo');
+    } catch (error) {
+      console.error('Erro ao limpar cache:', error);
+      // Não exibir erro para o usuário, é um cleanup silencioso
+    }
   };
 
   return (

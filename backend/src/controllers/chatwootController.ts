@@ -31,6 +31,11 @@ export const importContactsByTags = async (req: AuthenticatedRequest, res: Respo
     }
 
     // Importar contatos
+    console.log(`🔄 Iniciando importação de contatos para ${tagMappings.length} tag(s)...`);
+    tagMappings.forEach((mapping: any) => {
+      console.log(`  📋 Tag: "${mapping.chatwootTag}" → Categoria: ${mapping.categoryId}`);
+    });
+    
     const result = await chatwootService.syncContacts(tenantId, tagMappings);
 
     res.json({
@@ -138,4 +143,37 @@ export const streamChatwootTags = async (req: AuthenticatedRequest, res: Respons
   }
 };
 
+
+// DELETE /api/chatwoot/cache - Limpar cache de conversas
+export const clearChatwootCache = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    // Para SUPERADMIN, permitir tenantId via body
+    let tenantId = req.tenantId;
+    
+    if (req.user?.role === 'SUPERADMIN' && req.body.tenantId) {
+      tenantId = req.body.tenantId;
+    }
+    
+    if (!tenantId) {
+      return res.status(400).json({ 
+        error: 'TenantID não encontrado',
+        message: 'SUPERADMIN deve fornecer tenantId no body'
+      });
+    }
+
+    chatwootService.clearCache(tenantId);
+
+    res.json({
+      success: true,
+      message: 'Cache limpo com sucesso'
+    });
+
+  } catch (error: any) {
+    console.error('Erro ao limpar cache:', error);
+    res.status(500).json({
+      error: 'Erro ao limpar cache',
+      message: error.message
+    });
+  }
+};
 

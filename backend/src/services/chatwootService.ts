@@ -10,6 +10,15 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // Map para controlar sincronizações em progresso por tenant
 const syncInProgress = new Map<string, AbortController>();
 
+// Cache de conversas paginadas com TTL
+interface ConversationsCache {
+  data: ChatwootConversation[];
+  timestamp: number;
+  ttl: number; // em milissegundos
+}
+const conversationsCache = new Map<string, ConversationsCache>();
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutos
+
 interface TagMapping {
   chatwootTag: string;
   categoryId: string;
@@ -279,6 +288,15 @@ export class ChatwootService {
       }
 
       console.log(`🏁 Carregamento de tags finalizado - Total: ${tagsAccumulated.size} tags únicas`);
+      
+      // Salvar conversas no cache
+      conversationsCache.set(tenantId, {
+        data: conversations,
+        timestamp: Date.now(),
+        ttl: CACHE_TTL
+      });
+      console.log(`💾 Cache atualizado: ${conversations.length} conversas armazenadas (válido por 10 minutos)`);
+      
       syncInProgress.delete(tenantId);
 
       // Retornar tags finais
@@ -329,71 +347,94 @@ export class ChatwootService {
         throw new Error('Chatwoot não está configurado');
       }
 
-      // Buscar todas as conversas com paginação
-      const conversations: ChatwootConversation[] = [];
-      let page = 1;
-      let hasMore = true;
+      // Verificar se existe cache válido
+      const cached = conversationsCache.get(tenantId);
+      let conversations: ChatwootConversation[];
       let pagesFetched = 0;
       let hasWarning = false;
       const warnings: string[] = [];
 
-      while (hasMore) {
-        // Verificar se foi cancelado ANTES de fazer nova requisição
-        if (abortController.signal.aborted) {
-          console.log(`⚠️ Sincronização cancelada pelo usuário. Parando loop de paginação`);
-          throw new Error('Sincronização cancelada pelo usuário');
+      if (cached && (Date.now() - cached.timestamp) < cached.ttl) {
+        console.log(`📦 Usando conversas em cache (${cached.data.length} conversas, cache válido por mais ${Math.round((cached.ttl - (Date.now() - cached.timestamp)) / 1000)}s)`);
+        conversations = cached.data;
+      } else {
+        if (cached) {
+          console.log(`⏰ Cache expirado, buscando novamente...`);
+        } else {
+          console.log(`🔍 Cache não encontrado, buscando conversas...`);
         }
 
-        try {
-          console.log(`📄 Buscando página ${page} para sincronização...`);
-          
-          const response = await axios.get(
-            `${settings.chatwootUrl}/api/v1/accounts/${settings.chatwootAccountId}/conversations?page=${page}&per_page=100`,
-            {
-              headers: {
-                'api_access_token': settings.chatwootApiToken
-              },
-              timeout: 60000, // 60 segundos de timeout
-              signal: abortController.signal
-            }
-          );
+        // Buscar todas as conversas com paginação
+        conversations = [];
+        let page = 1;
+        let hasMore = true;
 
-          const pageData: ChatwootConversation[] = response.data.data?.payload || [];
-          
-          if (pageData.length === 0) {
-            console.log(`✅ Paginação completa na página ${page}`);
-            hasMore = false;
-          } else {
-            conversations.push(...pageData);
-            pagesFetched++;
-            console.log(`✅ Página ${page}: ${pageData.length} conversas (total: ${conversations.length})`);
-            page++;
-            
-            // Delay de 2 segundos entre requisições
-            await delay(2000);
-          }
-        } catch (error: any) {
-          // Se foi cancelado, propagar o erro
-          if (abortController.signal.aborted || error.code === 'ERR_CANCELED') {
-            console.log(`⚠️ Sincronização cancelada pelo usuário na página ${page}`);
-            syncInProgress.delete(tenantId);
+        while (hasMore) {
+          // Verificar se foi cancelado ANTES de fazer nova requisição
+          if (abortController.signal.aborted) {
+            console.log(`⚠️ Sincronização cancelada pelo usuário. Parando loop de paginação`);
             throw new Error('Sincronização cancelada pelo usuário');
           }
 
-          const errorMsg = error.response?.status === 401 
-            ? 'Token do Chatwoot inválido ou expirado'
-            : error.code === 'ECONNABORTED'
-            ? `Timeout na página ${page} (API demorou > 60s)`
-            : error.message;
-          
-          console.warn(`⚠️ Erro na página ${page}: ${errorMsg}`);
-          warnings.push(`Erro ao buscar página ${page}: ${errorMsg}`);
-          hasWarning = true;
-          hasMore = false;
+          try {
+            console.log(`📄 Buscando página ${page} para sincronização...`);
+            
+            const response = await axios.get(
+              `${settings.chatwootUrl}/api/v1/accounts/${settings.chatwootAccountId}/conversations?page=${page}&per_page=100`,
+              {
+                headers: {
+                  'api_access_token': settings.chatwootApiToken
+                },
+                timeout: 60000, // 60 segundos de timeout
+                signal: abortController.signal
+              }
+            );
+
+            const pageData: ChatwootConversation[] = response.data.data?.payload || [];
+            
+            if (pageData.length === 0) {
+              console.log(`✅ Paginação completa na página ${page}`);
+              hasMore = false;
+            } else {
+              conversations.push(...pageData);
+              pagesFetched++;
+              console.log(`✅ Página ${page}: ${pageData.length} conversas (total: ${conversations.length})`);
+              page++;
+              
+              // Delay de 2 segundos entre requisições
+              await delay(2000);
+            }
+          } catch (error: any) {
+            // Se foi cancelado, propagar o erro
+            if (abortController.signal.aborted || error.code === 'ERR_CANCELED') {
+              console.log(`⚠️ Sincronização cancelada pelo usuário na página ${page}`);
+              syncInProgress.delete(tenantId);
+              throw new Error('Sincronização cancelada pelo usuário');
+            }
+
+            const errorMsg = error.response?.status === 401 
+              ? 'Token do Chatwoot inválido ou expirado'
+              : error.code === 'ECONNABORTED'
+              ? `Timeout na página ${page} (API demorou > 60s)`
+              : error.message;
+            
+            console.warn(`⚠️ Erro na página ${page}: ${errorMsg}`);
+            warnings.push(`Erro ao buscar página ${page}: ${errorMsg}`);
+            hasWarning = true;
+            hasMore = false;
+          }
         }
+
+        // Salvar no cache
+        conversationsCache.set(tenantId, {
+          data: conversations,
+          timestamp: Date.now(),
+          ttl: CACHE_TTL
+        });
+        console.log(`💾 Cache atualizado: ${conversations.length} conversas armazenadas`);
       }
 
-      console.log(`📊 Total de ${conversations.length} conversas carregadas do Chatwoot em ${pagesFetched} páginas`);
+      console.log(`📊 Total de ${conversations.length} conversas ${cached && (Date.now() - cached.timestamp) < cached.ttl ? 'do cache' : `carregadas em ${pagesFetched} páginas`}`);
       console.log(`🔄 Iniciando processamento de ${tagMappings.length} mapeamentos de tags...`);
 
       let imported = 0;
@@ -529,6 +570,16 @@ export class ChatwootService {
       const controller = syncInProgress.get(tenantId);
       console.log(`⚠️ Cancelando sincronização do tenant ${tenantId}`);
       controller?.abort();
+    }
+  }
+
+  clearCache(tenantId: string): void {
+    if (conversationsCache.has(tenantId)) {
+      const cache = conversationsCache.get(tenantId);
+      console.log(`🗑️ Limpando cache de ${cache?.data.length} conversas do tenant ${tenantId}`);
+      conversationsCache.delete(tenantId);
+    } else {
+      console.log(`ℹ️ Nenhum cache encontrado para o tenant ${tenantId}`);
     }
   }
 }
