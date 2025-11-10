@@ -101,8 +101,9 @@ export class ChatwootService {
           }
         } catch (error: any) {
           // Se foi cancelado, propagar o erro
-          if (abortController.signal.aborted) {
+          if (abortController.signal.aborted || error.code === 'ERR_CANCELED') {
             console.log(`⚠️ Sincronização cancelada pelo usuário na página ${page}`);
+            syncInProgress.delete(tenantId);
             throw new Error('Sincronização cancelada pelo usuário');
           }
 
@@ -260,8 +261,9 @@ export class ChatwootService {
           }
         } catch (error: any) {
           // Se foi cancelado, propagar o erro
-          if (abortController.signal.aborted) {
+          if (abortController.signal.aborted || error.code === 'ERR_CANCELED') {
             console.log(`⚠️ Sincronização cancelada pelo usuário na página ${page}`);
+            syncInProgress.delete(tenantId);
             throw new Error('Sincronização cancelada pelo usuário');
           }
 
@@ -372,8 +374,9 @@ export class ChatwootService {
           }
         } catch (error: any) {
           // Se foi cancelado, propagar o erro
-          if (abortController.signal.aborted) {
+          if (abortController.signal.aborted || error.code === 'ERR_CANCELED') {
             console.log(`⚠️ Sincronização cancelada pelo usuário na página ${page}`);
+            syncInProgress.delete(tenantId);
             throw new Error('Sincronização cancelada pelo usuário');
           }
 
@@ -391,6 +394,7 @@ export class ChatwootService {
       }
 
       console.log(`📊 Total de ${conversations.length} conversas carregadas do Chatwoot em ${pagesFetched} páginas`);
+      console.log(`🔄 Iniciando processamento de ${tagMappings.length} mapeamentos de tags...`);
 
       let imported = 0;
       let updated = 0;
@@ -408,7 +412,7 @@ export class ChatwootService {
           conv.labels && conv.labels.includes(mapping.chatwootTag)
         );
 
-        console.log(`📋 Tag "${mapping.chatwootTag}": ${tagConversations.length} conversas encontradas`);
+        console.log(`📋 Tag "${mapping.chatwootTag}": ${tagConversations.length} conversas encontradas → Categoria: ${mapping.categoryId}`);
 
         for (const conv of tagConversations) {
           const contact = conv.meta?.sender;
@@ -481,6 +485,7 @@ export class ChatwootService {
               }
             });
             updated++;
+            console.log(`✅ Atualizado: ${contact.name || 'Sem nome'} (${normalizedPhone}) → Categoria: ${mapping.categoryId}`);
           } else {
             // Criar novo contato
             await prisma.contact.create({
@@ -494,6 +499,7 @@ export class ChatwootService {
               }
             });
             imported++;
+            console.log(`✅ Importado: ${contact.name || 'Sem nome'} (${normalizedPhone}) → Categoria: ${mapping.categoryId}`);
           }
         }
       }
