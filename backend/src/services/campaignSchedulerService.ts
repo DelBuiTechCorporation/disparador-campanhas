@@ -13,6 +13,7 @@ class CampaignSchedulerService {
   private isRunning = false;
   private intervalId: NodeJS.Timeout | null = null;
   private campaignSessionIndexes: Map<string, number> = new Map(); // Rastrear índice atual de cada campanha
+  private processingCampaigns: Set<string> = new Set(); // Rastrear campanhas em processamento
 
   start() {
     if (this.isRunning) {
@@ -85,8 +86,22 @@ class CampaignSchedulerService {
       });
 
       for (const campaign of runningCampaigns) {
+        // Verificar se esta campanha já está processando uma mensagem
+        if (this.processingCampaigns.has(campaign.id)) {
+          console.log(`⏭️ Campanha ${campaign.id} já está processando uma mensagem, pulando...`);
+          continue;
+        }
+
         if (campaign.messages.length > 0) {
-          await this.processNextMessage(campaign, campaign.messages[0]);
+          // Marcar campanha como em processamento
+          this.processingCampaigns.add(campaign.id);
+          
+          // Processar mensagem de forma assíncrona (não espera completar)
+          this.processNextMessage(campaign, campaign.messages[0])
+            .finally(() => {
+              // Remover do set quando terminar (sucesso ou erro)
+              this.processingCampaigns.delete(campaign.id);
+            });
         } else {
           // Verificar se todas as mensagens foram processadas (excluindo PROCESSING e PENDING)
           const activeCount = await prisma.campaignMessage.count({
@@ -448,6 +463,27 @@ class CampaignSchedulerService {
         });
 
         console.log(`Message sent successfully to ${message.contactPhone}`);
+
+        // Notificar via WebSocket com countdown do próximo disparo
+        if (campaign.tenantId && websocketService.isInitialized) {
+          const minDelay = campaign.minRandomDelay || 0;
+          const maxDelay = campaign.randomDelay;
+          const nextShotIn = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay);
+          
+          const updatedSentCount = campaign.sentCount + 1;
+          const progress = Math.round((updatedSentCount / campaign.totalContacts) * 100);
+
+          websocketService.emitCampaignProgress(campaign.tenantId, {
+            campaignId: campaign.id,
+            campaignName: campaign.nome,
+            progress,
+            totalContacts: campaign.totalContacts,
+            sentCount: updatedSentCount,
+            failedCount: campaign.failedCount,
+            status: campaign.status,
+            nextShotIn // segundos até o próximo disparo
+          } as any);
+        }
       } else {
         // Marcar como falha
         await prisma.campaignMessage.update({

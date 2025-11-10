@@ -313,10 +313,11 @@ export class WebSocketService {
     sentCount: number;
     failedCount: number;
     status: string;
+    nextShotIn?: number; // Segundos até o próximo disparo
   }): void {
     if (this.io) {
       this.io.to(`tenant_${tenantId}`).emit('campaign_progress', campaignData);
-      console.log(`📊 Progresso de campanha enviado para tenant ${tenantId}: ${campaignData.progress}%`);
+      console.log(`📊 Progresso de campanha enviado para tenant ${tenantId}: ${campaignData.progress}%${campaignData.nextShotIn ? ` (próximo em ${campaignData.nextShotIn}s)` : ''}`);
     }
   }
 

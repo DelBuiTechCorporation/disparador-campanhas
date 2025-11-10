@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { Header } from '../components/Header';
 import { BusinessHoursModal } from '../components/BusinessHoursModal';
 import { EditCampaignMessagesModal } from '../components/EditCampaignMessagesModal';
+import websocketService from '../services/websocket';
 
 type MessageContent =
   | { text: string }
@@ -92,6 +93,9 @@ export function CampaignsPage() {
   const [showBusinessHoursModal, setShowBusinessHoursModal] = useState(false);
   const [selectedCampaignForBusinessHours, setSelectedCampaignForBusinessHours] = useState<{id: string, name: string} | null>(null);
 
+  // Next shot countdown - map campaignId to seconds remaining
+  const [nextShotCountdown, setNextShotCountdown] = useState<{ [key: string]: number }>({});
+
   // Form states
   const [formData, setFormData] = useState<CampaignFormData>({
     nome: '',
@@ -114,6 +118,72 @@ export function CampaignsPage() {
     loadCampaigns();
     loadContactTags();
     loadWhatsAppSessions();
+  }, []);
+
+  // Update countdown every second for running campaigns
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNextShotCountdown(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(campaignId => {
+          if (updated[campaignId] > 0) {
+            updated[campaignId] -= 1;
+          }
+        });
+        return updated;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Initialize countdown when campaigns load
+  useEffect(() => {
+    const runningCampaigns = campaigns.filter(c => c.status === 'RUNNING');
+    const newCountdowns: { [key: string]: number } = {};
+    
+    runningCampaigns.forEach(campaign => {
+      // Estimate based on max delay (randomDelay is the max)
+      if (!nextShotCountdown[campaign.id]) {
+        newCountdowns[campaign.id] = campaign.randomDelay || 60;
+      }
+    });
+
+    if (Object.keys(newCountdowns).length > 0) {
+      setNextShotCountdown(prev => ({ ...prev, ...newCountdowns }));
+    }
+  }, [campaigns]);
+
+  // Listen to WebSocket for real-time campaign updates
+  useEffect(() => {
+    websocketService.connect();
+
+    const handleCampaignProgress = (data: any) => {
+      console.log('📊 Campaign progress received:', data);
+      
+      // Update campaign stats
+      if (data.campaignId) {
+        setCampaigns(prev => prev.map(c => 
+          c.id === data.campaignId 
+            ? { ...c, sentCount: data.sentCount, failedCount: data.failedCount }
+            : c
+        ));
+
+        // Update countdown if nextShotIn is provided
+        if (data.nextShotIn !== undefined) {
+          setNextShotCountdown(prev => ({
+            ...prev,
+            [data.campaignId]: data.nextShotIn
+          }));
+        }
+      }
+    };
+
+    websocketService.on('campaign_progress', handleCampaignProgress);
+
+    return () => {
+      websocketService.off('campaign_progress', handleCampaignProgress);
+    };
   }, []);
 
   // Helper para fazer requisições autenticadas
@@ -730,6 +800,18 @@ export function CampaignsPage() {
                         <span className="font-medium">Enviados:</span>
                         <span>{campaign.sentCount}/{campaign.totalContacts}</span>
                       </div>
+
+                      {/* Próximo disparo para campanhas em execução */}
+                      {campaign.status === 'RUNNING' && nextShotCountdown[campaign.id] !== undefined && (
+                        <div className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded">
+                          <svg className="w-3 h-3 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-xs font-medium text-green-700">
+                            Próximo: {nextShotCountdown[campaign.id]}s
+                          </span>
+                        </div>
+                      )}
 
                       {/* Sessões ativas (apenas ícones) */}
                       {campaign.sessionNames && campaign.sessionNames.length > 0 && (
