@@ -4,6 +4,49 @@ import { ChatwootService } from '../services/chatwootService';
 
 const chatwootService = new ChatwootService();
 
+// POST /api/chatwoot/import - Importar contatos por tags
+export const importContactsByTags = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { tagMappings } = req.body;
+
+    if (!tagMappings || !Array.isArray(tagMappings) || tagMappings.length === 0) {
+      return res.status(400).json({
+        error: 'Tag mappings são obrigatórios',
+        message: 'Envie um array de { chatwootTag, categoryId }'
+      });
+    }
+
+    // Para SUPERADMIN, permitir tenantId via body
+    let tenantId = req.tenantId;
+    
+    if (req.user?.role === 'SUPERADMIN' && req.body.tenantId) {
+      tenantId = req.body.tenantId;
+    }
+    
+    if (!tenantId) {
+      return res.status(400).json({ 
+        error: 'TenantID não encontrado',
+        message: 'SUPERADMIN deve fornecer tenantId no body'
+      });
+    }
+
+    // Importar contatos
+    const result = await chatwootService.syncContacts(tenantId, tagMappings);
+
+    res.json({
+      success: true,
+      data: result,
+      message: `${result.imported} contatos importados, ${result.updated} atualizados`
+    });
+
+  } catch (error: any) {
+    console.error('Erro ao importar contatos:', error);
+    res.status(500).json({
+      error: 'Erro ao importar contatos',
+      message: error.message
+    });
+  }
+};
 
 
 // SSE stream para tags

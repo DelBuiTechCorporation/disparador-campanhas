@@ -419,23 +419,37 @@ export class ChatwootService {
             continue;
           }
 
-          // Validar telefone
-          if (!contact.phone_number) {
-            console.log(`Contato ${contact.name} sem telefone, pulando...`);
+          // Obter telefone (phone_number ou identifier como fallback)
+          let rawPhone = contact.phone_number;
+          
+          // Se phone_number vazio, usar identifier
+          if (!rawPhone && contact.identifier) {
+            // Extrair número do identifier (ex: "5511999999999@s.whatsapp.net" -> "5511999999999")
+            rawPhone = contact.identifier.split('@')[0];
+            // Adicionar + no início se não tiver
+            if (rawPhone && !rawPhone.startsWith('+')) {
+              rawPhone = `+${rawPhone}`;
+            }
+            console.log(`📱 Usando identifier como telefone: ${contact.identifier} -> ${rawPhone}`);
+          }
+
+          // Validar se conseguiu obter telefone
+          if (!rawPhone) {
+            console.log(`Contato ${contact.name} sem telefone ou identifier, pulando...`);
             continue;
           }
 
           // Normalizar telefone
           let normalizedPhone: string;
           try {
-            const phoneNumber = parsePhoneNumberFromString(contact.phone_number, 'BR');
+            const phoneNumber = parsePhoneNumberFromString(rawPhone, 'BR');
             if (!phoneNumber || !phoneNumber.isValid()) {
-              console.log(`Telefone inválido para ${contact.name}: ${contact.phone_number}`);
+              console.log(`Telefone inválido para ${contact.name}: ${rawPhone}`);
               continue;
             }
             normalizedPhone = phoneNumber.format('E.164');
           } catch (error) {
-            console.log(`Erro ao processar telefone ${contact.phone_number}:`, error);
+            console.log(`Erro ao processar telefone ${rawPhone}:`, error);
             continue;
           }
 

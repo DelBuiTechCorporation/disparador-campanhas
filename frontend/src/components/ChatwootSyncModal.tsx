@@ -149,18 +149,54 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
 
     setIsImporting(true);
     try {
-      // Simular importação por enquanto
-      toast.loading('Importando contatos...', { id: 'import-toast' });
+      toast.loading('Importando contatos do Chatwoot...', { id: 'import-toast' });
       
-      // Simular delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const token = localStorage.getItem('auth_token');
+      const selectedTenantId = localStorage.getItem('selected_tenant_id');
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
+
+      if (selectedTenantId) {
+        headers['X-Tenant-Id'] = selectedTenantId;
+      }
+
+      const response = await fetch('/api/chatwoot/import', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tagMappings,
+          tenantId: selectedTenantId // Para SUPERADMIN
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || error.error || 'Erro ao importar contatos');
+      }
+
+      const result = await response.json();
       
-      toast.success(`Importação simulada: ${tagMappings.length} tags mapeadas`, { id: 'import-toast' });
+      toast.success(
+        `Importação concluída! ${result.data.imported} contatos importados, ${result.data.updated} atualizados`,
+        { id: 'import-toast', duration: 5000 }
+      );
+      
       onSuccess();
       handleClose();
     } catch (error: any) {
       console.error('Erro ao importar:', error);
-      toast.error(error.message || 'Erro ao importar contatos', { id: 'import-toast' });
+      
+      if (error.message.includes('não configurado') || error.message.includes('Configure')) {
+        toast.error('Configure o Chatwoot na página de Integrações primeiro', { 
+          id: 'import-toast',
+          duration: 5000 
+        });
+      } else {
+        toast.error(error.message || 'Erro ao importar contatos', { id: 'import-toast' });
+      }
     } finally {
       setIsImporting(false);
     }
