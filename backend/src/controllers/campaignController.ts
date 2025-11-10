@@ -424,6 +424,29 @@ export const toggleCampaign = async (req: AuthenticatedRequest, res: Response) =
 
     const newStatus = action === 'pause' ? 'PAUSED' : 'RUNNING';
 
+    // Se pausando, reverter todas as mensagens PROCESSING para PENDING
+    if (action === 'pause') {
+      const processingCount = await prisma.campaignMessage.count({
+        where: {
+          campaignId: id,
+          status: 'PROCESSING'
+        }
+      });
+
+      if (processingCount > 0) {
+        await prisma.campaignMessage.updateMany({
+          where: {
+            campaignId: id,
+            status: 'PROCESSING'
+          },
+          data: {
+            status: 'PENDING'
+          }
+        });
+        console.log(`⏸️ Campanha pausada: ${processingCount} mensagem(ns) PROCESSING revertida(s) para PENDING`);
+      }
+    }
+
     const updatedCampaign = await prisma.campaign.update({
       where: { id },
       data: {
