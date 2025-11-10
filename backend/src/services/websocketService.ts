@@ -116,6 +116,11 @@ export class WebSocketService {
 
         // Emite contagem de usuários conectados para o tenant
         this.emitUserCount(socket.user.tenantId);
+
+        // Enviar estado atual das campanhas em execução quando conectar
+        if (socket.user.tenantId) {
+          this.emitCurrentCampaignsState(socket, socket.user.tenantId);
+        }
       }
 
       // Handler para marcar notificação como lida
@@ -380,6 +385,51 @@ export class WebSocketService {
     if (this.io) {
       this.io.to('superadmin').emit('system_status', status);
       console.log(`🖥️ Status do sistema enviado para SuperAdmins: ${status.message}`);
+    }
+  }
+
+  // Emite estado atual das campanhas em execução quando usuário conecta
+  private async emitCurrentCampaignsState(socket: any, tenantId: string): Promise<void> {
+    try {
+      // Buscar campanhas RUNNING do tenant
+      const runningCampaigns = await prisma.campaign.findMany({
+        where: {
+          tenantId,
+          status: 'RUNNING'
+        },
+        select: {
+          id: true,
+          nome: true,
+          status: true,
+          totalContacts: true,
+          sentCount: true,
+          failedCount: true
+        }
+      });
+
+      if (runningCampaigns.length === 0) {
+        return;
+      }
+
+      console.log(`📡 Enviando estado atual de ${runningCampaigns.length} campanha(s) para socket ${socket.id}`);
+
+      // Emitir estado de cada campanha
+      for (const campaign of runningCampaigns) {
+        const progress = Math.round((campaign.sentCount / campaign.totalContacts) * 100);
+        
+        socket.emit('campaign_progress', {
+          campaignId: campaign.id,
+          campaignName: campaign.nome,
+          progress,
+          totalContacts: campaign.totalContacts,
+          sentCount: campaign.sentCount,
+          failedCount: campaign.failedCount,
+          status: campaign.status,
+          // Não enviar nextShotIn aqui pois não temos essa info no banco
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao emitir estado das campanhas:', error);
     }
   }
 

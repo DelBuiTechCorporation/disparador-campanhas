@@ -57,7 +57,12 @@ class WebSocketService implements WebSocketServiceInterface {
 
     this.socket.on('connect', () => {
       console.log('✅ WebSocket connected:', this.socket?.id);
+      console.log('✅ WebSocket ready to receive events');
       this.reconnectAttempts = 0;
+    });
+
+    this.socket.onAny((eventName, ...args) => {
+      console.log(`🔔 WebSocket event received: "${eventName}"`, args);
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -118,6 +123,7 @@ class WebSocketService implements WebSocketServiceInterface {
   on(event: string, callback: (...args: any[]) => void): void {
     if (this.socket) {
       this.socket.on(event, callback);
+      console.log(`✅ Listener registrado para evento: "${event}"`);
     } else {
       console.warn(`⚠️ Cannot listen to event "${event}" - socket not connected`);
     }
