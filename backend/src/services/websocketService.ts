@@ -89,6 +89,11 @@ export class WebSocketService {
           role: user.role
         };
 
+        // Para SUPERADMIN, também armazenar o tenantId do JWT para entrar nos rooms corretos
+        if (user.role === 'SUPERADMIN' && decoded.tenantId) {
+          (socket.user as any).jwtTenantId = decoded.tenantId;
+        }
+
         next();
       } catch (error) {
         console.error('Erro na autenticação WebSocket:', error);
@@ -112,6 +117,13 @@ export class WebSocketService {
         if (socket.user.role === 'SUPERADMIN') {
           socket.join('superadmin');
           console.log(`🔐 SuperAdmin ${socket.user.id} conectado`);
+          
+          // SUPERADMIN também entra no room do tenant do JWT
+          const jwtTenantId = (socket.user as any).jwtTenantId;
+          if (jwtTenantId) {
+            socket.join(`tenant_${jwtTenantId}`);
+            console.log(`👥 SuperAdmin ${socket.user.id} também entrou no room: tenant_${jwtTenantId}`);
+          }
         }
 
         // Emite contagem de usuários conectados para o tenant
@@ -120,13 +132,17 @@ export class WebSocketService {
         // Enviar estado atual das campanhas em execução quando conectar
         console.log(`🔍 DEBUG: socket.user.tenantId = ${socket.user.tenantId}, typeof = ${typeof socket.user.tenantId}`);
         
-        // Para SUPERADMIN, buscar campanhas de TODOS os tenants ou usar tenant do contexto
+        // Para SUPERADMIN, buscar campanhas do tenant que está visualizando (do JWT)
         if (socket.user.role === 'SUPERADMIN') {
-          // SUPERADMIN vê todas as campanhas RUNNING
-          console.log(`🔐 SUPERADMIN conectado - enviando estado de todas as campanhas RUNNING`);
-          this.emitCurrentCampaignsState(socket, null).catch((err: any) => {
-            console.error('❌ Erro ao emitir estado das campanhas (SUPERADMIN):', err);
-          });
+          const jwtTenantId = (socket.user as any).jwtTenantId;
+          if (jwtTenantId) {
+            console.log(`🔐 SUPERADMIN conectado - enviando estado do tenant ${jwtTenantId}`);
+            this.emitCurrentCampaignsState(socket, jwtTenantId).catch((err: any) => {
+              console.error('❌ Erro ao emitir estado das campanhas (SUPERADMIN):', err);
+            });
+          } else {
+            console.log(`⚠️ SUPERADMIN sem tenant no JWT`);
+          }
         } else if (socket.user.tenantId) {
           console.log(`🔍 Tentando enviar estado de campanhas para tenant ${socket.user.tenantId}`);
           this.emitCurrentCampaignsState(socket, socket.user.tenantId).catch(err => {

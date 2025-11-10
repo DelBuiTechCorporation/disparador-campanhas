@@ -930,6 +930,20 @@ class CampaignSchedulerService {
 
     return countdowns;
   }
+
+  // Método para limpar estado de processamento de uma campanha (chamado ao pausar)
+  clearCampaignProcessing(campaignId: string): void {
+    if (this.processingCampaigns.has(campaignId)) {
+      this.processingCampaigns.delete(campaignId);
+      console.log(`🧹 Estado de processamento limpo para campanha ${campaignId}`);
+    }
+    
+    // Também limpar countdown se existir
+    if (this.campaignNextShot.has(campaignId)) {
+      this.campaignNextShot.delete(campaignId);
+      console.log(`🧹 Countdown limpo para campanha ${campaignId}`);
+    }
+  }
 }
 
 // Criar instância singleton

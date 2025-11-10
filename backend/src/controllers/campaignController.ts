@@ -445,6 +445,10 @@ export const toggleCampaign = async (req: AuthenticatedRequest, res: Response) =
         });
         console.log(`⏸️ Campanha pausada: ${processingCount} mensagem(ns) PROCESSING revertida(s) para PENDING`);
       }
+
+      // Limpar o estado de processamento no scheduler
+      const { campaignSchedulerService } = await import('../services/campaignSchedulerService');
+      campaignSchedulerService.clearCampaignProcessing(id);
     }
 
     const updatedCampaign = await prisma.campaign.update({
