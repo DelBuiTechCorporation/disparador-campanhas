@@ -208,6 +208,15 @@ export class ChatwootService {
         // Verificar se foi cancelado ANTES de fazer nova requisição
         if (abortController.signal.aborted) {
           console.log(`⚠️ Sincronização cancelada pelo usuário. Parando loop de paginação`);
+          // Salvar cache mesmo se cancelado (conversas já carregadas)
+          if (conversations.length > 0) {
+            conversationsCache.set(tenantId, {
+              data: conversations,
+              timestamp: Date.now(),
+              ttl: CACHE_TTL
+            });
+            console.log(`💾 Cache salvo mesmo com cancelamento: ${conversations.length} conversas armazenadas`);
+          }
           throw new Error('Sincronização cancelada pelo usuário');
         }
 
@@ -257,6 +266,14 @@ export class ChatwootService {
 
             onUpdate(tagsArray);
             
+            // Salvar cache progressivamente a cada página
+            conversationsCache.set(tenantId, {
+              data: conversations,
+              timestamp: Date.now(),
+              ttl: CACHE_TTL
+            });
+            console.log(`💾 Cache atualizado progressivamente: ${conversations.length} conversas`);
+            
             page++;
             
             // Verificar cancelamento antes do delay
@@ -269,7 +286,7 @@ export class ChatwootService {
             await delay(2000);
           }
         } catch (error: any) {
-          // Se foi cancelado, propagar o erro
+          // Se foi cancelado, propagar o erro (cache já foi salvo acima)
           if (abortController.signal.aborted || error.code === 'ERR_CANCELED') {
             console.log(`⚠️ Sincronização cancelada pelo usuário na página ${page}`);
             syncInProgress.delete(tenantId);
@@ -289,15 +306,13 @@ export class ChatwootService {
 
       console.log(`🏁 Carregamento de tags finalizado - Total: ${tagsAccumulated.size} tags únicas`);
       
-      // Salvar conversas no cache
-      const cacheKey = tenantId;
-      conversationsCache.set(cacheKey, {
+      // Salvar conversas no cache (final ou cancelado)
+      conversationsCache.set(tenantId, {
         data: conversations,
         timestamp: Date.now(),
         ttl: CACHE_TTL
       });
-      console.log(`💾 Cache atualizado para tenant ${tenantId}: ${conversations.length} conversas armazenadas (válido por 10 minutos)`);
-      console.log(`💾 Cache keys atuais:`, Array.from(conversationsCache.keys()));
+      console.log(`💾 Cache finalizado para tenant ${tenantId}: ${conversations.length} conversas (válido por 10 minutos)`);
       
       syncInProgress.delete(tenantId);
 
@@ -356,24 +371,27 @@ export class ChatwootService {
       let hasWarning = false;
       const warnings: string[] = [];
 
-      console.log(`🔍 Verificando cache para tenant ${tenantId}...`);
-      console.log(`💾 Cache keys disponíveis:`, Array.from(conversationsCache.keys()));
-      console.log(`💾 Cache encontrado:`, cached ? 'SIM' : 'NÃO');
-      
       if (cached) {
         const age = Date.now() - cached.timestamp;
         const remainingTTL = cached.ttl - age;
-        console.log(`💾 Cache age: ${Math.round(age / 1000)}s, TTL restante: ${Math.round(remainingTTL / 1000)}s`);
+        const isValid = remainingTTL > 0;
+        
+        console.log(`💾 Cache encontrado: ${cached.data.length} conversas`);
+        console.log(`💾 Idade do cache: ${Math.round(age / 1000)}s`);
+        console.log(`💾 TTL restante: ${Math.round(remainingTTL / 1000)}s`);
+        console.log(`💾 Cache válido: ${isValid ? 'SIM ✅' : 'NÃO (expirado) ❌'}`);
+      } else {
+        console.log(`💾 Nenhum cache encontrado para tenant ${tenantId}`);
       }
 
       if (cached && (Date.now() - cached.timestamp) < cached.ttl) {
-        console.log(`📦 Usando conversas em cache (${cached.data.length} conversas, cache válido por mais ${Math.round((cached.ttl - (Date.now() - cached.timestamp)) / 1000)}s)`);
+        console.log(`📦 Usando conversas em cache (${cached.data.length} conversas) - evitando re-paginação!`);
         conversations = cached.data;
       } else {
         if (cached) {
-          console.log(`⏰ Cache expirado, buscando novamente...`);
+          console.log(`⏰ Cache expirado, buscando conversas novamente...`);
         } else {
-          console.log(`🔍 Cache não encontrado, buscando conversas...`);
+          console.log(`🔍 Nenhum cache disponível, iniciando paginação...`);
         }
 
         // Buscar todas as conversas com paginação
