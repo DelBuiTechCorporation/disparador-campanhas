@@ -6,7 +6,7 @@ export interface WhatsAppSessionData {
   name: string; // Nome real usado na API (ex: vendas_c52982e8)
   displayName?: string; // Nome exibido ao usuário (ex: vendas)
   status: 'WORKING' | 'SCAN_QR_CODE' | 'STOPPED' | 'FAILED';
-  provider: 'WAHA' | 'EVOLUTION';
+  provider: 'WAHA' | 'EVOLUTION' | 'QUEPASA';
   config?: any;
   me?: {
     id: string;
@@ -18,6 +18,9 @@ export interface WhatsAppSessionData {
   qrExpiresAt?: Date;
   assignedWorker?: string;
   tenantId?: string;
+  quepasaToken?: string; // Token único para cada sessão Quepasa
+  interactiveCampaignEnabled?: boolean; // Habilitar webhooks para campanhas interativas
+  webhookSecret?: string; // Token único para validar webhooks
 }
 
 export class WhatsAppSessionService {
@@ -43,7 +46,7 @@ export class WhatsAppSessionService {
       name: session.name,
       displayName: session.displayName || session.name,
       status: session.status,
-      provider: session.provider as 'WAHA' | 'EVOLUTION',
+      provider: session.provider as 'WAHA' | 'EVOLUTION' | 'QUEPASA',
       config: session.config ? JSON.parse(session.config) : {},
       me: session.meId ? {
         id: session.meId,
@@ -54,7 +57,8 @@ export class WhatsAppSessionService {
       qr: session.qr,
       qrExpiresAt: session.qrExpiresAt,
       assignedWorker: session.assignedWorker,
-      tenantId: session.tenantId
+      tenantId: session.tenantId,
+      quepasaToken: session.quepasaToken
     }));
   }
 
@@ -92,17 +96,21 @@ export class WhatsAppSessionService {
       qr: session.qr,
       qrExpiresAt: session.qrExpiresAt,
       assignedWorker: session.assignedWorker,
-      tenantId: session.tenantId
+      tenantId: session.tenantId,
+      quepasaToken: session.quepasaToken
     };
   }
 
   static async createOrUpdateSession(data: WhatsAppSessionData) {
     console.log('💾 WhatsAppSessionService.createOrUpdateSession - data:', {
       name: data.name,
-      tenantId: data.tenantId
+      tenantId: data.tenantId,
+      interactiveCampaignEnabled: data.interactiveCampaignEnabled,
+      webhookSecret: data.webhookSecret ? '***' : undefined
     });
 
-    const sessionData = {
+    // Dados base para criação
+    const baseData = {
       name: data.name,
       displayName: data.displayName || data.name,
       status: data.status,
@@ -115,20 +123,37 @@ export class WhatsAppSessionService {
       qr: data.qr || null,
       qrExpiresAt: data.qrExpiresAt || null,
       assignedWorker: data.assignedWorker || null,
-      tenantId: data.tenantId || null
+      tenantId: data.tenantId || null,
+      quepasaToken: data.quepasaToken || null,
+    };
+
+    // Dados para update - só incluir interactiveCampaignEnabled e webhookSecret se foram explicitamente passados
+    const updateData: any = {
+      ...baseData,
+      atualizadoEm: new Date()
+    };
+
+    // Só atualizar esses campos se foram explicitamente passados (não undefined)
+    if (data.interactiveCampaignEnabled !== undefined) {
+      updateData.interactiveCampaignEnabled = data.interactiveCampaignEnabled;
+    }
+    if (data.webhookSecret !== undefined) {
+      updateData.webhookSecret = data.webhookSecret;
+    }
+
+    // Dados para criação - incluir valores default
+    const createData = {
+      ...baseData,
+      interactiveCampaignEnabled: data.interactiveCampaignEnabled || false,
+      webhookSecret: data.webhookSecret || null,
+      criadoEm: new Date(),
+      atualizadoEm: new Date()
     };
 
     const session = await prisma.whatsAppSession.upsert({
       where: { name: data.name },
-      update: {
-        ...sessionData,
-        atualizadoEm: new Date()
-      },
-      create: {
-        ...sessionData,
-        criadoEm: new Date(),
-        atualizadoEm: new Date()
-      }
+      update: updateData,
+      create: createData
     });
 
     return session;

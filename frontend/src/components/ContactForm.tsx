@@ -37,6 +37,8 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
   const {
     register,
     handleSubmit,
+    reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ContactFormData>({
     resolver: zodResolver(contactSchema),
@@ -52,6 +54,31 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
   useEffect(() => {
     loadCategories();
   }, []);
+
+  // Reset form when contact changes AND categories are loaded
+  useEffect(() => {
+    if (contact && !loadingCategories) {
+      console.log('🔄 Resetting form with contact:', contact);
+      console.log('📋 categoriaId from contact:', contact.categoriaId);
+      console.log('📦 Categories loaded:', categories.length);
+
+      reset({
+        nome: contact.nome || '',
+        telefone: contact.telefone || '',
+        email: contact.email || '',
+        observacoes: contact.observacoes || '',
+        categoriaId: contact.categoriaId || '',
+      });
+
+      // Força o setValue após reset para garantir que o select seja atualizado
+      setTimeout(() => {
+        if (contact.categoriaId) {
+          setValue('categoriaId', contact.categoriaId);
+          console.log('✅ setValue categoriaId:', contact.categoriaId);
+        }
+      }, 100);
+    }
+  }, [contact, categories, loadingCategories, reset, setValue]);
 
   const loadCategories = async () => {
     try {
@@ -108,43 +135,43 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-lg border border-gray-100" role="dialog" aria-labelledby="form-title">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl mx-auto mb-4 flex items-center justify-center">
-            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 sm:p-4 z-50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl p-4 sm:p-6 md:p-8 w-full max-w-lg max-h-[95vh] overflow-y-auto border border-gray-100" role="dialog" aria-labelledby="form-title">
+        <div className="text-center mb-4 sm:mb-6 md:mb-8">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl mx-auto mb-3 sm:mb-4 flex items-center justify-center">
+            <svg className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           </div>
-          <h2 id="form-title" className="text-2xl font-bold text-gray-900">
+          <h2 id="form-title" className="text-xl sm:text-2xl font-bold text-gray-900">
             {contact ? 'Editar Contato' : 'Novo Contato'}
           </h2>
-          <p className="text-gray-500 mt-2">
+          <p className="text-sm sm:text-base text-gray-500 mt-1 sm:mt-2">
             {contact ? 'Atualize as informações do contato' : 'Preencha os dados para criar um novo contato'}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 sm:space-y-5 md:space-y-6">
           <div>
-            <label htmlFor="nome" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="nome" className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1.5 sm:mb-2">
               Nome *
             </label>
             <input
               id="nome"
               type="text"
               {...register('nome')}
-              className="input-field"
+              className="input-field text-sm sm:text-base"
               placeholder="Digite o nome completo"
             />
             {errors.nome && (
-              <p className="text-red-500 text-sm mt-1">
+              <p className="text-red-500 text-xs sm:text-sm mt-1">
                 {errors.nome.message}
               </p>
             )}
           </div>
 
           <div>
-            <label htmlFor="telefone" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="telefone" className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1.5 sm:mb-2">
               Telefone *
             </label>
             <input
@@ -152,28 +179,28 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
               type="tel"
               {...register('telefone')}
               placeholder="+55 11 99999-9999"
-              className="input-field"
+              className="input-field text-sm sm:text-base"
             />
             {errors.telefone && (
-              <p className="text-red-500 text-sm mt-1">
+              <p className="text-red-500 text-xs sm:text-sm mt-1">
                 {errors.telefone.message}
               </p>
             )}
           </div>
 
           <div>
-            <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="email" className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1.5 sm:mb-2">
               Email
             </label>
             <input
               id="email"
               type="email"
               {...register('email')}
-              className="input-field"
+              className="input-field text-sm sm:text-base"
               placeholder="Digite o email"
             />
             {errors.email && (
-              <p className="text-red-500 text-sm mt-1">
+              <p className="text-red-500 text-xs sm:text-sm mt-1">
                 {errors.email.message}
               </p>
             )}
@@ -181,13 +208,13 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
 
 
           <div>
-            <label htmlFor="categoriaId" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="categoriaId" className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1.5 sm:mb-2">
               Categoria
             </label>
             <select
               id="categoriaId"
               {...register('categoriaId')}
-              className="input-field"
+              className="input-field text-sm sm:text-base"
               disabled={loadingCategories}
             >
               <option value="">Selecione uma categoria</option>
@@ -204,30 +231,48 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
           </div>
 
           <div>
-            <label htmlFor="observacoes" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="observacoes" className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1.5 sm:mb-2">
               Observações
             </label>
             <textarea
               id="observacoes"
               {...register('observacoes')}
-              rows={4}
-              className="input-field resize-none"
+              rows={3}
+              className="input-field resize-none text-sm sm:text-base"
               placeholder="Digite observações adicionais"
             />
           </div>
 
-          <div className="flex gap-4 pt-6">
+          {/* Mostrar ID do Perfex apenas se o contato foi importado do Perfex */}
+          {contact?.perfexLeadId && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+              <label className="block text-xs sm:text-sm font-semibold text-purple-700 mb-1">
+                ID do Lead no Perfex CRM
+              </label>
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm font-mono text-purple-800">{contact.perfexLeadId}</span>
+              </div>
+              <p className="text-xs text-purple-600 mt-1">
+                Este contato foi importado do Perfex CRM
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4 sm:pt-6">
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 bg-gray-100 text-gray-700 py-3 px-6 rounded-xl hover:bg-gray-200 font-medium transition-all duration-200 border border-gray-200"
+              className="w-full sm:flex-1 bg-gray-100 text-gray-700 py-2.5 sm:py-3 px-4 sm:px-6 rounded-xl hover:bg-gray-200 font-medium transition-all duration-200 border border-gray-200 text-sm sm:text-base"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="btn-primary flex-1 py-3 px-6 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="btn-primary w-full sm:flex-1 py-2.5 sm:py-3 px-4 sm:px-6 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm sm:text-base"
             >
               {isSubmitting ? (
                 <>

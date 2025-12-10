@@ -7,7 +7,7 @@ import { AuthenticatedRequest } from '../middleware/auth';
 export class ContactController {
   static async getContacts(req: AuthenticatedRequest, res: Response) {
     try {
-      const { search, page = '1', pageSize = '30' } = req.query;
+      const { search, tag, page = '1', pageSize = '30' } = req.query;
 
       // Sempre usar tenantId do token
       const tenantId = req.tenantId;
@@ -16,7 +16,8 @@ export class ContactController {
         search as string,
         parseInt(page as string),
         parseInt(pageSize as string),
-        tenantId
+        tenantId,
+        tag as string
       );
 
       res.json(result);
@@ -103,6 +104,63 @@ export class ContactController {
     } catch (error) {
       const apiError: ApiError = {
         error: 'Erro ao excluir contato',
+        details: error instanceof Error ? error.message : error
+      };
+      res.status(400).json(apiError);
+    }
+  }
+
+  static async bulkUpdateContacts(req: AuthenticatedRequest, res: Response) {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        const apiError: ApiError = {
+          error: 'Dados inválidos',
+          details: errors.array()
+        };
+        return res.status(400).json(apiError);
+      }
+
+      const { contactIds, updates } = req.body;
+      const tenantId = req.tenantId;
+
+      if (!Array.isArray(contactIds) || contactIds.length === 0) {
+        const apiError: ApiError = {
+          error: 'IDs de contatos são obrigatórios',
+          details: 'Forneça um array de IDs'
+        };
+        return res.status(400).json(apiError);
+      }
+
+      const result = await ContactService.bulkUpdateContacts(contactIds, updates, tenantId);
+      res.json(result);
+    } catch (error) {
+      const apiError: ApiError = {
+        error: 'Erro ao atualizar contatos em massa',
+        details: error instanceof Error ? error.message : error
+      };
+      res.status(400).json(apiError);
+    }
+  }
+
+  static async bulkDeleteContacts(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { contactIds } = req.body;
+      const tenantId = req.tenantId;
+
+      if (!Array.isArray(contactIds) || contactIds.length === 0) {
+        const apiError: ApiError = {
+          error: 'IDs de contatos são obrigatórios',
+          details: 'Forneça um array de IDs'
+        };
+        return res.status(400).json(apiError);
+      }
+
+      const result = await ContactService.bulkDeleteContacts(contactIds, tenantId);
+      res.json(result);
+    } catch (error) {
+      const apiError: ApiError = {
+        error: 'Erro ao excluir contatos em massa',
         details: error instanceof Error ? error.message : error
       };
       res.status(400).json(apiError);

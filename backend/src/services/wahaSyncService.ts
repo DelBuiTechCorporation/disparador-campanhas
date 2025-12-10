@@ -145,14 +145,27 @@ export class WahaSyncService {
   /**
    * Cria uma nova sessão na WAHA API e salva no banco
    */
-  static async createSession(name: string): Promise<any> {
-    const sessionData = {
+  static async createSession(name: string, webhookUrl?: string): Promise<any> {
+    const sessionData: any = {
       name,
       config: {
         proxy: null,
         webhooks: []
       }
     };
+
+    // Se webhookUrl fornecida, adicionar ao array de webhooks
+    if (webhookUrl) {
+      sessionData.config.webhooks = [
+        {
+          url: webhookUrl,
+          events: ['message.any'],
+          hmac: null,
+          retries: null,
+          customHeaders: null
+        }
+      ];
+    }
 
     try {
       // Criar na WAHA API

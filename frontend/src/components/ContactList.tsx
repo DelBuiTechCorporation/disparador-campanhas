@@ -7,9 +7,22 @@ interface ContactListProps {
   loading: boolean;
   onEdit: (contact: Contact) => void;
   onDelete: (id: string) => void;
+  selectedContactIds?: string[];
+  onToggleSelect?: (id: string) => void;
+  onSelectAll?: () => void;
+  selectionMode?: boolean;
 }
 
-export function ContactList({ contacts, loading, onEdit, onDelete }: ContactListProps) {
+export function ContactList({
+  contacts,
+  loading,
+  onEdit,
+  onDelete,
+  selectedContactIds = [],
+  onToggleSelect,
+  onSelectAll,
+  selectionMode = false,
+}: ContactListProps) {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const handleDelete = (id: string) => {
@@ -48,11 +61,24 @@ export function ContactList({ contacts, loading, onEdit, onDelete }: ContactList
     );
   }
 
+  const allSelected = contacts.length > 0 && selectedContactIds.length === contacts.length;
+
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full bg-white border border-gray-200" role="table">
         <thead className="bg-gray-50">
           <tr>
+            {selectionMode && (
+              <th className="px-6 py-3 text-left">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={onSelectAll}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                  aria-label="Selecionar todos os contatos"
+                />
+              </th>
+            )}
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Nome
             </th>
@@ -74,10 +100,23 @@ export function ContactList({ contacts, loading, onEdit, onDelete }: ContactList
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
-          {contacts.map((contact) => (
-            <tr key={contact.id} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {contact.nome}
+          {contacts.map((contact) => {
+            const isSelected = selectedContactIds.includes(contact.id);
+            return (
+              <tr key={contact.id} className={`hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}>
+                {selectionMode && (
+                  <td className="px-6 py-4">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => onToggleSelect?.(contact.id)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                      aria-label={`Selecionar contato ${contact.nome}`}
+                    />
+                  </td>
+                )}
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {contact.nome}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 {formatPhoneNumber(contact.telefone)}
@@ -124,8 +163,9 @@ export function ContactList({ contacts, loading, onEdit, onDelete }: ContactList
                   </button>
                 </div>
               </td>
-            </tr>
-          ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

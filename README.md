@@ -1,4 +1,4 @@
-# 🚀 Astra Campaign - Plataforma SaaS Multi-Tenant para Campanhas WhatsApp
+# 🚀 Astra Campaign v0.0.4 - Plataforma SaaS Multi-Tenant para Campanhas WhatsApp
 
 <div align="center">
 
@@ -11,26 +11,68 @@
 
 **Plataforma SaaS profissional multi-tenant para campanhas de WhatsApp em massa com IA integrada**
 
-[🎯 Recursos](#-recursos-principais) • [🛠️ Instalação](#️-instalação) • [📚 Documentação](#-documentação) • [🤝 Contribuição](#-contribuindo)
+[🎯 Recursos](#-recursos-principais) • [✨ Novidades v0.0.4](#-novidades-da-vers%C3%A3o-004) • [🛠️ Instalação](#️-instalação) • [📚 Documentação](#-documentação) • [🤝 Contribuição](#-contribuindo)
 
 </div>
 
 ---
 
+## ✨ Novidades da Versão 0.0.4
+
+### 🎨 **Campanhas Interativas com Flow Builder Visual** (DESTAQUE!)
+- ✅ **Editor Visual Drag & Drop** - Crie fluxos de conversação sem código usando ReactFlow
+- ✅ **12+ Tipos de Nodes** - Text, Image, Video, Audio, Document, Condition, Delay, AI, HTTP REST, Integrations, Stop
+- ✅ **Processamento com IA** - OpenAI/Groq integrado nos fluxos
+- ✅ **Condições Inteligentes** - Ramificações baseadas em respostas
+- ✅ **Integrações Nativas** - Chatwoot e Perfex CRM dentro dos fluxos
+- ✅ **Sistema de Sessões** - Rastreamento completo de estado por contato
+- ✅ **Webhooks Bidirecionais** - Resposta automática a mensagens recebidas
+
+### 💼 **Integração Perfex CRM**
+- ✅ **Importação de Leads** - Sincronize leads do Perfex CRM como contatos
+- ✅ **Sincronização Bidirecional** - Mantenha dados atualizados entre sistemas
+- ✅ **Mapeamento de Campos** - Configure campos customizados
+- ✅ **Node Dedicado** - Use Perfex diretamente nos fluxos interativos
+
+### 🎛️ **Controle de Provedores por Tenant**
+- ✅ **Provedores Configuráveis** - Cada tenant escolhe entre WAHA, Evolution API ou QuePasa
+- ✅ **Flexibilidade Total** - Habilite apenas os provedores necessários
+- ✅ **Interface Simplificada** - Seleção visual de provedores
+
+### 🔐 **Sistema de Webhooks Seguro**
+- ✅ **HMAC-SHA256** - Validação criptográfica de webhooks
+- ✅ **Idempotência** - Detecção automática de mensagens duplicadas
+- ✅ **URLs Dedicadas** - Webhook único por conexão
+
+### 📈 **Melhorias Gerais**
+- ✅ **+19 Componentes** - Novos componentes React para fluxos
+- ✅ **+10 Services** - Nova arquitetura de serviços
+- ✅ **+9 Rotas API** - Endpoints para campanhas interativas
+- ✅ **+5 Modelos Prisma** - Novos models no banco de dados
+- ✅ **Documentação Completa** - Guias, API e testes
+
+📖 **[Ver Changelog Completo](RELEASE_v0.0.3.txt)** | **[Guia de Campanhas Interativas](CAMPANHA_INTERATIVA_README.md)**
+
+---
+
 ## 📋 Sobre o Projeto
 
-O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-source para gerenciamento e execução de campanhas de WhatsApp em massa. Desenvolvido com arquitetura moderna, oferece recursos enterprise como isolamento total de dados por empresa, sistema de quotas, backup/restore automatizado, inteligência artificial para personalização de mensagens e suporte a múltiplos provedores WhatsApp (WAHA, Evolution API e QuePasa), além de integração com Chatwoot para importação de contatos.
+O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-source para gerenciamento e execução de campanhas de WhatsApp em massa e interativas. Desenvolvido com arquitetura moderna, oferece recursos enterprise como isolamento total de dados por empresa, sistema de quotas, backup/restore automatizado, inteligência artificial para personalização de mensagens, **flow builder visual para conversas interativas**, suporte a múltiplos provedores WhatsApp (WAHA, Evolution API e QuePasa), além de integrações com Chatwoot e Perfex CRM.
 
 > 🔥 **Open Source & SaaS Ready**: Projeto totalmente gratuito com arquitetura multi-tenant pronta para comercialização. Sem ligação alguma com o WhatsApp oficial.
 
 ### ✨ Principais Diferenciais
 
+- 🎨 **Flow Builder Visual**: Crie conversas interativas com editor Drag & Drop (ReactFlow)
+- 🤖 **Campanhas Interativas**: Fluxos bidirecionais com IA, condições e integrações
 - 🏢 **Multi-Tenant (SaaS)**: Isolamento completo de dados por empresa
-- 🔌 **Múltiplos Provedores**: Integração com WAHA API, Evolution API e QuePasa
-- 🤖 **IA Integrada**: OpenAI e Groq para mensagens personalizadas
-- 💬 **Integração Chatwoot**: Importação de contatos do Chatwoot
+- 🔌 **Múltiplos Provedores**: WAHA API, Evolution API e QuePasa (configurável por tenant)
+- 🤖 **IA Integrada**: OpenAI e Groq para mensagens personalizadas e processamento de respostas
+- 💬 **Integração Chatwoot**: Importação de contatos e criação de tickets
+- 💼 **Integração Perfex CRM**: Sincronização de leads e dados bidirecionais
 - 🎲 **Randomização Inteligente**: Textos, imagens, vídeos e arquivos aleatórios
 - 🔄 **Multi-Sessão com Failover**: Distribuição inteligente de envios
+- 🔐 **Webhooks Seguros**: HMAC-SHA256 para validação de webhooks
 - 💾 **Backup & Restore**: Sistema automatizado de backup e restauração
 - 📊 **Analytics Completo**: Relatórios detalhados com exportação CSV
 - 👥 **Sistema de Roles**: SUPERADMIN, ADMIN e USER
@@ -41,6 +83,26 @@ O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-sou
 ---
 
 ## 🎯 Recursos Principais
+
+### 🎨 **Campanhas Interativas com Flow Builder** (NOVO v0.0.4)
+- ✅ **Editor Visual Drag & Drop**: Construa fluxos complexos com interface intuitiva
+- ✅ **12+ Tipos de Nodes**: Trigger, Text, Image, Video, Audio, Document, Condition, Delay, AI, HTTP REST, Integrations, Stop
+- ✅ **Nodes de Condição**: Crie ramificações baseadas em respostas dos contatos
+- ✅ **Processamento com IA**: OpenAI e Groq integrados para respostas inteligentes
+- ✅ **HTTP REST Node**: Faça requisições a APIs externas durante o fluxo
+- ✅ **Integração Chatwoot**: Crie tickets automaticamente no Chatwoot
+- ✅ **Integração Perfex**: Atualize leads no CRM durante conversas
+- ✅ **Sistema de Sessões**: Rastreamento completo do estado de cada contato
+- ✅ **Webhooks Bidirecionais**: Receba e responda mensagens automaticamente
+- ✅ **Preview de Fluxo**: Visualize o fluxo completo antes de publicar
+- ✅ **Simulação**: Teste fluxos antes de ativar para contatos reais
+
+### 💼 **Integração Perfex CRM** (NOVO v0.0.4)
+- ✅ **Importação de Leads**: Busque leads do Perfex e converta em contatos
+- ✅ **Sincronização Automática**: Mantenha dados atualizados entre sistemas
+- ✅ **Configuração por Tenant**: Cada empresa usa seu próprio Perfex
+- ✅ **Node de Integração**: Use Perfex dentro de fluxos interativos
+- ✅ **Mapeamento de Campos**: Configure quais campos sincronizar
 
 ### 🏢 **Arquitetura Multi-Tenant (SaaS)**
 - ✅ Isolamento completo de dados por empresa (tenant)
@@ -63,6 +125,7 @@ O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-sou
 - ✅ CRUD completo de contatos
 - ✅ Importação em massa via CSV
 - ✅ **Importação do Chatwoot**: Sincronização de contatos do Chatwoot
+- ✅ **Importação do Perfex CRM**: Sincronização de leads do Perfex (NOVO v0.0.4)
 - ✅ Sistema de categorização com tags
 - ✅ Validação de números telefônicos (formato E.164)
 - ✅ Busca avançada e filtros inteligentes
@@ -74,12 +137,14 @@ O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-sou
 - ✅ **WAHA API**: Suporte completo com QR Code
 - ✅ **Evolution API**: Integração nativa com Evolution
 - ✅ **QuePasa**: Integração com API QuePasa
+- ✅ **Configuração por Tenant**: Escolha quais provedores habilitar (NOVO v0.0.4)
 - ✅ Múltiplas sessões simultâneas por tenant
 - ✅ QR Code automático com expiração
 - ✅ Status em tempo real das conexões
 - ✅ Gerenciamento simplificado de sessões
 - ✅ Reconnect automático em falhas
 - ✅ Seleção de provedor ao criar sessão
+- ✅ Webhooks para campanhas interativas (NOVO v0.0.4)
 
 ### 🎯 **Campanhas Inteligentes**
 - ✅ **Tipos de Mensagem**: Texto, Imagem, Vídeo, Áudio, Documentos
@@ -176,9 +241,11 @@ O **Astra Campaign** é uma **plataforma SaaS multi-tenant** completa e open-sou
 - **WAHA API** - WhatsApp Web API
 - **Evolution API** - API alternativa para WhatsApp
 - **QuePasa** - API WhatsApp multi-dispositivo
-- **Chatwoot** - Importação de contatos e sincronização
-- **OpenAI API** - GPT para geração de conteúdo
-- **Groq API** - IA ultra-rápida
+- **Chatwoot** - Importação de contatos e criação de tickets
+- **Perfex CRM** - Sincronização de leads e gestão de CRM (NOVO v0.0.4)
+- **OpenAI API** - GPT para geração de conteúdo e processamento de respostas
+- **Groq API** - IA ultra-rápida para fluxos interativos
+- **ReactFlow** - Editor visual de fluxos (NOVO v0.0.4)
 
 ---
 
@@ -289,6 +356,8 @@ npm run dev          # Servidor de desenvolvimento (porta 3000)
 - `DELETE /api/contatos/:id` - Excluir contato
 - `POST /api/contatos/import` - Importar CSV
 - `POST /api/chatwoot/sync-contacts` - Importar contatos do Chatwoot
+- `POST /api/perfex/import` - Importar leads do Perfex CRM (NOVO v0.0.4)
+- `POST /api/perfex/sync` - Sincronizar contatos com Perfex (NOVO v0.0.4)
 - `PATCH /api/contatos/bulk-edit` - Edição em massa de contatos
 
 #### **Campanhas**
@@ -297,6 +366,25 @@ npm run dev          # Servidor de desenvolvimento (porta 3000)
 - `PATCH /api/campaigns/:id/toggle` - Pausar/Retomar
 - `DELETE /api/campaigns/:id` - Excluir campanha
 - `GET /api/campaigns/:id/report` - Relatório detalhado
+
+#### **Campanhas Interativas** (NOVO v0.0.4)
+- `GET /api/interactive-campaigns` - Listar campanhas interativas
+- `POST /api/interactive-campaigns` - Criar campanha interativa
+- `GET /api/interactive-campaigns/:id` - Detalhes da campanha
+- `PUT /api/interactive-campaigns/:id` - Atualizar campanha
+- `DELETE /api/interactive-campaigns/:id` - Excluir campanha
+- `POST /api/interactive-campaigns/:id/publish` - Publicar campanha
+- `POST /api/interactive-campaigns/:id/simulate` - Simular fluxo
+
+#### **Conexões para Campanhas Interativas** (NOVO v0.0.4)
+- `GET /api/connections` - Listar conexões
+- `POST /api/connections` - Criar conexão
+- `GET /api/connections/:id` - Detalhes da conexão
+- `PUT /api/connections/:id` - Atualizar conexão
+- `DELETE /api/connections/:id` - Excluir conexão
+
+#### **Webhooks** (NOVO v0.0.4)
+- `POST /api/webhooks/wa/:connectionId/callback` - Receber mensagens (HMAC validado)
 
 #### **Sessões WhatsApp**
 - `GET /api/waha/sessions` - Listar sessões
@@ -633,10 +721,15 @@ Este projeto está licenciado sob a **GNU Affero General Public License v3.0 (AG
 - ✅ Treinamento e documentação
 
 ### 📚 **Recursos Úteis**
+- 📖 [Guia de Campanhas Interativas](CAMPANHA_INTERATIVA_README.md) - **Documentação completa da v0.0.4**
+- 📖 [API de Campanhas Interativas](CAMPANHA_INTERATIVA_API.md) - **Endpoints e exemplos**
+- 📖 [Testes de Campanhas Interativas](CAMPANHA_INTERATIVA_TESTES.md) - **Checklist de validação**
 - 📖 [Documentação WAHA](https://waha.devlike.pro/docs/)
 - 📖 [Documentação Evolution API](https://doc.evolution-api.com/)
 - 📖 [Documentação QuePasa](https://github.com/nocodeleaks/quepasa)
 - 📖 [Documentação Chatwoot API](https://www.chatwoot.com/developers/api/)
+- 📖 [Documentação Perfex CRM API](https://demo.perfexcrm.com/api-docs/) - **Integração v0.0.4**
+- 📖 [Documentação ReactFlow](https://reactflow.dev/) - **Flow Builder v0.0.4**
 - 📖 [Documentação Prisma](https://www.prisma.io/docs/)
 - 📖 [Documentação React](https://reactjs.org/docs/)
 - 📖 [Documentação Docker Swarm](https://docs.docker.com/engine/swarm/)

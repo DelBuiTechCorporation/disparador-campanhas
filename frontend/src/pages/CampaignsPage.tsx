@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Header } from '../components/Header';
+import { Portal } from '../components/Portal';
 
 type MessageContent =
   | { text: string }
@@ -67,6 +68,7 @@ export function CampaignsPage() {
   const [whatsappSessions, setWhatsappSessions] = useState<WhatsAppSession[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<{ [key: number]: boolean }>({});
   const [fileInfos, setFileInfos] = useState<{ [key: number]: { name: string, size: number, type: string } }>({});
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -166,6 +168,24 @@ export function CampaignsPage() {
     }));
   };
 
+  const handleSelectAllTags = () => {
+    setFormData(prev => ({
+      ...prev,
+      targetTags: prev.targetTags.length === contactTags.length
+        ? []
+        : contactTags.map(tag => tag.id)
+    }));
+  };
+
+  const handleSelectAllSessions = () => {
+    setFormData(prev => ({
+      ...prev,
+      sessionNames: prev.sessionNames.length === whatsappSessions.length
+        ? []
+        : whatsappSessions.map(session => session.name)
+    }));
+  };
+
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -200,11 +220,23 @@ export function CampaignsPage() {
         finalMessageContent = singleMessage.content;
       }
 
+      // Converter scheduledFor de datetime-local para ISO string
+      let scheduledForISO = null;
+      if (!formData.startImmediately && formData.scheduledFor) {
+        // datetime-local retorna formato "YYYY-MM-DDTHH:mm" SEM timezone
+        // Precisamos interpretar como horário LOCAL do usuário e converter para UTC
+        // Exemplo: usuário escolhe 2025-10-15T19:00 em UTC-3 (Brasília)
+        // Isso deve ser salvo como 2025-10-15T22:00:00.000Z (19:00 - 3 = 22:00 UTC)
+        const localDateStr = formData.scheduledFor; // "2025-10-15T19:00"
+        const localDate = new Date(localDateStr); // JavaScript interpreta como LOCAL
+        scheduledForISO = localDate.toISOString(); // Converte para UTC com timezone
+      }
+
       const campaignData = {
         ...formData,
         messageType: finalMessageType,
         messageContent: finalMessageContent,
-        scheduledFor: formData.startImmediately ? null : formData.scheduledFor || null
+        scheduledFor: scheduledForISO
       };
 
       const response = await authenticatedFetch('/api/campaigns', {
@@ -248,6 +280,39 @@ export function CampaignsPage() {
     });
     setUploadingFiles({});
     setFileInfos({});
+    setDraggedIndex(null);
+  };
+
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      return;
+    }
+
+    const currentSequence = ('sequence' in formData.messageContent) ? formData.messageContent.sequence : [];
+    const newSequence = [...currentSequence];
+    const [draggedItem] = newSequence.splice(draggedIndex, 1);
+    newSequence.splice(dropIndex, 0, draggedItem);
+
+    setFormData(prev => ({
+      ...prev,
+      messageContent: { sequence: newSequence }
+    }));
+    setDraggedIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
   };
 
   const handleFileUpload = async (file: File, messageIndex: number, variationIndex?: number) => {
@@ -524,7 +589,7 @@ export function CampaignsPage() {
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = `relatorio-campanha-${reportData.campaign.nome}.csv`;
+        a.download = `relatorio-campanha-${reportData.campaign.nome}.xlsx`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -726,7 +791,7 @@ export function CampaignsPage() {
                           </svg>
                         </button>
                       )}
-                      {['PENDING', 'COMPLETED', 'FAILED'].includes(campaign.status) && (
+                      {campaign.status !== 'RUNNING' && (
                         <button
                           onClick={() => handleDeleteCampaign(campaign.id)}
                           className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
@@ -748,7 +813,8 @@ export function CampaignsPage() {
 
         {/* Modal de Criação */}
         {showCreateModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30 p-4">
+          <Portal>
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ zIndex: 9999 }}>
             <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[95vh] overflow-y-auto">
               <div className="flex justify-between items-center p-6 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
                 <div>
@@ -792,9 +858,20 @@ export function CampaignsPage() {
 
                     {/* Categorias de Contatos */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Categorias de Contatos *
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Categorias de Contatos *
+                        </label>
+                        {contactTags.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleSelectAllTags}
+                            className="text-xs text-blue-600 hover:text-blue-700 font-medium underline"
+                          >
+                            {formData.targetTags.length === contactTags.length ? 'Desmarcar todas' : 'Selecionar todas'}
+                          </button>
+                        )}
+                      </div>
                       <p className="text-xs text-gray-500 mb-3">Selecione quais categorias de contatos receberão a campanha</p>
                       <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-3 bg-gray-50">
                         {contactTags.map((tag) => (
@@ -819,9 +896,20 @@ export function CampaignsPage() {
 
                     {/* Conexões WhatsApp */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Conexões WhatsApp * ({formData.sessionNames.length} selecionadas)
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Conexões WhatsApp * ({formData.sessionNames.length} selecionadas)
+                        </label>
+                        {whatsappSessions.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleSelectAllSessions}
+                            className="text-xs text-blue-600 hover:text-blue-700 font-medium underline"
+                          >
+                            {formData.sessionNames.length === whatsappSessions.length ? 'Desmarcar todas' : 'Selecionar todas'}
+                          </button>
+                        )}
+                      </div>
                       <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                         <div className="flex items-start">
                           <svg className="h-5 w-5 text-green-500 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -979,9 +1067,26 @@ export function CampaignsPage() {
 
                         <div className="space-y-3">
                           {('sequence' in formData.messageContent) && formData.messageContent.sequence.map((item, index) => (
-                            <div key={index} className="border border-gray-200 rounded-lg p-4">
+                            <div
+                              key={index}
+                              draggable
+                              onDragStart={() => handleDragStart(index)}
+                              onDragOver={(e) => handleDragOver(e, index)}
+                              onDrop={(e) => handleDrop(e, index)}
+                              onDragEnd={handleDragEnd}
+                              className={`border rounded-lg p-4 transition-all cursor-move ${
+                                draggedIndex === index
+                                  ? 'border-blue-500 bg-blue-50 opacity-50'
+                                  : draggedIndex !== null
+                                  ? 'border-gray-300 bg-gray-50'
+                                  : 'border-gray-200 bg-white hover:border-gray-300'
+                              }`}
+                            >
                               <div className="flex justify-between items-center mb-3">
-                                <span className="text-sm font-medium text-gray-600">Mensagem {index + 1}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-gray-400 cursor-move text-xl">⋮⋮</span>
+                                  <span className="text-sm font-medium text-gray-600">Mensagem {index + 1}</span>
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1017,6 +1122,9 @@ export function CampaignsPage() {
                                       case 'groq':
                                         newContent = { model: '', system: '', user: '' };
                                         break;
+                                      case 'wait':
+                                        newContent = { waitTime: 30 };
+                                        break;
                                       default:
                                         newContent = { url: '', caption: '' };
                                         break;
@@ -1033,13 +1141,14 @@ export function CampaignsPage() {
                                   }}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 >
-                                  <option value="text">Texto</option>
-                                  <option value="image">Imagem</option>
-                                  <option value="video">Vídeo</option>
-                                  <option value="audio">Áudio</option>
-                                  <option value="document">Arquivo</option>
-                                  <option value="openai">OpenAI</option>
-                                  <option value="groq">Groq AI</option>
+                                  <option value="text">💬 Texto</option>
+                                  <option value="image">🖼️ Imagem</option>
+                                  <option value="video">🎬 Vídeo</option>
+                                  <option value="audio">🎵 Áudio</option>
+                                  <option value="document">📄 Arquivo</option>
+                                  <option value="openai">🤖 OpenAI</option>
+                                  <option value="groq">⚡ Groq AI</option>
+                                  <option value="wait">⏱️ Espera</option>
                                 </select>
 
                                 {item.type === 'text' && (
@@ -1927,6 +2036,50 @@ export function CampaignsPage() {
                                     )}
                                   </div>
                                 )}
+
+                                {item.type === 'wait' && (
+                                  <div className="space-y-3">
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                      <div className="flex items-start gap-3">
+                                        <span className="text-2xl">⏱️</span>
+                                        <div className="flex-1">
+                                          <h4 className="text-sm font-medium text-yellow-900 mb-2">
+                                            Tempo de Espera
+                                          </h4>
+                                          <p className="text-xs text-yellow-700 mb-3">
+                                            Aguarda um tempo antes de enviar a próxima mensagem
+                                          </p>
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              type="number"
+                                              min="1"
+                                              max="3600"
+                                              value={item.content.waitTime || 30}
+                                              onChange={(e) => {
+                                                const currentSequence = ('sequence' in formData.messageContent) ? formData.messageContent.sequence : [];
+                                                const newSequence = currentSequence.map((seqItem, i) =>
+                                                  i === index ? {
+                                                    ...seqItem,
+                                                    content: { waitTime: parseInt(e.target.value) || 30 }
+                                                  } : seqItem
+                                                );
+                                                setFormData(prev => ({
+                                                  ...prev,
+                                                  messageContent: { sequence: newSequence }
+                                                }));
+                                              }}
+                                              className="w-24 px-3 py-2 border border-yellow-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 bg-white"
+                                            />
+                                            <span className="text-sm text-yellow-700">segundos</span>
+                                          </div>
+                                          <p className="text-xs text-yellow-600 mt-2">
+                                            Mínimo: 1 segundo | Máximo: 3600 segundos (1 hora)
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -1962,11 +2115,13 @@ export function CampaignsPage() {
               </form>
             </div>
           </div>
+          </Portal>
         )}
 
         {/* Modal de Relatórios */}
         {showReportModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
+          <Portal>
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center backdrop-blur-sm" style={{ zIndex: 9999 }}>
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto relative"
                  style={{ zIndex: 1000 }}>
               <div className="flex justify-between items-center p-6 border-b">
@@ -2287,6 +2442,7 @@ export function CampaignsPage() {
               </div>
             </div>
           </div>
+          </Portal>
         )}
       </div>
     </>

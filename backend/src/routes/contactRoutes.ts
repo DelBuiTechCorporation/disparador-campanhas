@@ -20,4 +20,8 @@ router.post('/', contactValidation, checkContactQuota, ContactController.createC
 router.put('/:id', contactValidation, ContactController.updateContact);
 router.delete('/:id', ContactController.deleteContact);
 
+// Bulk operations
+router.post('/bulk/update', ContactController.bulkUpdateContacts);
+router.post('/bulk/delete', ContactController.bulkDeleteContacts);
+
 export { router as contactRoutes };

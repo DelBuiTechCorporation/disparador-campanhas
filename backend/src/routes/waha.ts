@@ -3,6 +3,7 @@ import { WahaSyncService } from '../services/wahaSyncService';
 import { WhatsAppSessionService } from '../services/whatsappSessionService';
 import { evolutionApiService } from '../services/evolutionApiService';
 import { settingsService } from '../services/settingsService';
+import { configureQuepasaWebhook } from '../services/quepasaMessageService';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
 import { Response } from 'express';
 import { checkConnectionQuota } from '../middleware/quotaMiddleware';
@@ -11,6 +12,17 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 const fetch = require('node-fetch');
+const crypto = require('crypto');
+
+// Função para gerar token aleatório para sessões Quepasa
+function generateQuepasaToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Função para gerar webhook secret para campanhas interativas
+function generateWebhookSecret(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 const wahaRequest = async (endpoint: string, options: any = {}) => {
   // Buscar configurações dinâmicas do banco usando o método específico
@@ -63,55 +75,284 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
     // Sempre usar o tenantId do token (mesmo para SUPERADMIN quando tem empresa selecionada)
     const tenantId = req.tenantId;
 
-    // Sempre sincronizar sessões WAHA para pegar status atualizado (WORKING, SCAN_QR_CODE, etc)
+    // Sincronizar apenas sessões WAHA que já existem no banco DESTE tenant
+    // NÃO buscar sessões externas - sistema SaaS multi-tenant
     try {
-      await WahaSyncService.syncAllSessions();
+      const wahaSessions = await WhatsAppSessionService.getAllSessions(tenantId);
+      const wahaSessionsFiltered = wahaSessions.filter(s => s.provider === 'WAHA');
+
+      if (wahaSessionsFiltered.length > 0) {
+        console.log(`🔄 Atualizando status de ${wahaSessionsFiltered.length} sessões WAHA do tenant...`);
+        for (const session of wahaSessionsFiltered) {
+          try {
+            await WahaSyncService.syncSession(session.name);
+          } catch (err) {
+            console.warn(`⚠️ Erro ao sincronizar sessão WAHA ${session.name}:`, err);
+          }
+        }
+      }
     } catch (wahaError) {
       console.warn('⚠️ Erro ao sincronizar WAHA, mas continuando com dados do banco:', wahaError);
     }
 
-    // Sincronizar sessões Evolution (se existirem) - apenas para o tenant correto
-    const allSessions = await WhatsAppSessionService.getAllSessions(tenantId);
+    // Sincronizar sessões Quepasa
+    try {
+      console.log('🔄 Sincronizando status das sessões Quepasa...');
+      const quepasaSessions = await WhatsAppSessionService.getAllSessions(tenantId);
+      const quepasaConfig = await settingsService.getQuepasaConfig();
 
-    // Para sessões Evolution, tentar obter status atualizado
-    for (const session of allSessions) {
-      if (session.provider === 'EVOLUTION') {
-        try {
-          const status = await evolutionApiService.getInstanceStatus(session.name);
-          console.log(`🔍 Status Evolution para ${session.name}:`, status);
+      console.log(`📊 Total de sessões: ${quepasaSessions.length}`);
+      const quepasaSessionsFiltered = quepasaSessions.filter(s => s.provider === 'QUEPASA');
+      console.log(`📊 Sessões Quepasa encontradas: ${quepasaSessionsFiltered.length}`, quepasaSessionsFiltered.map(s => s.name));
+      console.log(`📊 Config Quepasa - URL: ${quepasaConfig.url ? 'configurada' : 'não configurada'}, Login: ${quepasaConfig.login}, Token: ${quepasaConfig.password ? 'configurado' : 'não configurado'}`);
 
-          // Obter informações detalhadas da instância
-          const instanceInfo = await evolutionApiService.getInstanceInfo(session.name);
+      if (quepasaConfig.url && quepasaConfig.login) {
+        for (const session of quepasaSessionsFiltered) {
+          try {
+            console.log(`🔍 Verificando status Quepasa para ${session.name}...`);
 
-          // Montar dados do 'me' quando conectado
-          let meData = undefined;
-          const evolutionData = instanceInfo as any;
-          if (status === 'WORKING' && evolutionData.ownerJid) {
-            meData = {
-              id: evolutionData.ownerJid,
-              pushName: evolutionData.profileName || instanceInfo.profileName || 'Usuário WhatsApp',
-              jid: evolutionData.ownerJid
-            };
-          }
+            // Usar APENAS o token da sessão (não usar token global)
+            const sessionToken = (session as any).quepasaToken;
 
-          // Só atualizar se o status for válido
-          if (status && ['WORKING', 'SCAN_QR_CODE', 'STOPPED', 'FAILED'].includes(status)) {
-            await WhatsAppSessionService.createOrUpdateSession({
-              name: session.name,
-              status: status as 'WORKING' | 'SCAN_QR_CODE' | 'STOPPED' | 'FAILED',
-              provider: 'EVOLUTION',
-              me: meData,
-              qr: session.qr || undefined,
-              qrExpiresAt: session.qrExpiresAt || undefined,
-              tenantId: session.tenantId || undefined
+            // Se não tiver token, a sessão ainda não foi iniciada - manter status atual
+            if (!sessionToken) {
+              console.log(`⏭️ Sessão ${session.name} não tem token - ainda não foi iniciada, mantendo status: ${(session as any).status}`);
+              continue;
+            }
+
+            console.log(`🔑 Usando token da sessão para ${session.name}: ${sessionToken.substring(0, 16)}...`);
+
+            // Primeiro tentar /health com o token da sessão
+            const statusResponse = await fetch(`${quepasaConfig.url}/health`, {
+              headers: {
+                'Accept': 'application/json',
+                'X-QUEPASA-TOKEN': sessionToken
+              }
             });
-          } else {
-            console.warn(`⚠️ Status inválido para sessão ${session.name}: ${status}`);
+
+            console.log(`📡 Response status: ${statusResponse.status} ${statusResponse.statusText}`);
+
+            // Erro 400 = token não encontrado na Quepasa
+            // Se a sessão está em SCAN_QR_CODE, verificar se o usuário já escaneou o QR
+            // (a QuePasa gera um token próprio quando o QR é escaneado)
+            if (statusResponse.status === 400) {
+              console.log(`⏳ Token ${sessionToken.substring(0, 16)}... não encontrado na Quepasa`);
+
+              // Se a sessão está aguardando QR, verificar se há servidor ready
+              if ((session as any).status === 'SCAN_QR_CODE') {
+                console.log(`🔍 Sessão ${session.name} aguardando QR, verificando servidores ready...`);
+
+                try {
+                  // Listar todos os servidores do usuário
+                  const listResponse = await fetch(`${quepasaConfig.url}/health`, {
+                    headers: {
+                      'Accept': 'application/json',
+                      'X-QUEPASA-USER': quepasaConfig.login,
+                      'X-QUEPASA-PASSWORD': quepasaConfig.password || ''
+                    }
+                  });
+
+                  if (listResponse.ok) {
+                    const listData = await listResponse.json();
+
+                    if (listData.success && listData.items && Array.isArray(listData.items)) {
+                      // Procurar servidor ready que não está associado a nenhuma sessão
+                      for (const server of listData.items) {
+                        const serverStatus = String(server.status || '').toLowerCase();
+                        const isReady = serverStatus.includes('ready') || server.health === true;
+
+                        if (server.token && isReady) {
+                          // Verificar se este token já está sendo usado por outra sessão
+                          const existingWithToken = await prisma.whatsAppSession.findFirst({
+                            where: {
+                              quepasaToken: server.token,
+                              name: { not: session.name }
+                            }
+                          });
+
+                          if (!existingWithToken) {
+                            console.log(`✅ Servidor ready encontrado para ${session.name}! Token: ${server.token.substring(0, 16)}...`);
+
+                            // Atualizar sessão com o token real da QuePasa
+                            await WhatsAppSessionService.createOrUpdateSession({
+                              name: session.name,
+                              status: 'WORKING',
+                              provider: 'QUEPASA',
+                              tenantId: (session as any).tenantId,
+                              displayName: (session as any).displayName,
+                              quepasaToken: server.token,
+                              me: {
+                                id: server.wid || server.number || 'unknown',
+                                pushName: server.name || 'Quepasa'
+                              }
+                            });
+
+                            console.log(`💾 Sessão ${session.name} atualizada para WORKING com token real`);
+
+                            // Configurar webhook se campanha interativa estiver habilitada
+                            const fullSession = await prisma.whatsAppSession.findUnique({
+                              where: { name: session.name }
+                            });
+
+                            if (fullSession?.interactiveCampaignEnabled && fullSession?.webhookSecret) {
+                              const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+                              const webhookUrlForQuepasa = `${baseUrl}/api/webhooks/incoming/${fullSession.id}/${fullSession.webhookSecret}`;
+                              console.log(`🔗 Configurando webhook QuePasa para campanhas interativas: ${webhookUrlForQuepasa}`);
+
+                              const webhookResult = await configureQuepasaWebhook(server.token, webhookUrlForQuepasa);
+                              if (webhookResult.success) {
+                                console.log(`✅ Webhook QuePasa configurado com sucesso para ${session.name}`);
+                              } else {
+                                console.error(`❌ Erro ao configurar webhook QuePasa: ${webhookResult.error}`);
+                              }
+                            }
+
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  }
+                } catch (listError) {
+                  console.warn(`⚠️ Erro ao listar servidores QuePasa:`, listError);
+                }
+              }
+
+              continue;
+            }
+
+            if (statusResponse.ok) {
+              const statusData = await statusResponse.json();
+              console.log(`📱 Status Quepasa completo (JSON):`, JSON.stringify(statusData, null, 2));
+
+              // Endpoint /health retorna: { success: true/false, status: "server status is ready"/"server status is disconnected"/etc }
+              let mappedStatus: 'WORKING' | 'SCAN_QR_CODE' | 'STOPPED' | 'FAILED' = 'STOPPED';
+              const statusLower = String(statusData.status).toLowerCase();
+
+              console.log(`🔍 Debug - success: ${statusData.success}, status original: "${statusData.status}", statusLower: "${statusLower}"`);
+
+              // /health retorna "server status is ready" quando conectado
+              if (statusData.success === true && statusLower.includes('ready')) {
+                mappedStatus = 'WORKING';
+                console.log('✅ Mapeado para WORKING');
+              } else if (statusLower.includes('starting') || statusLower.includes('qrcode')) {
+                mappedStatus = 'SCAN_QR_CODE';
+                console.log('⏳ Mapeado para SCAN_QR_CODE');
+              } else if (statusLower.includes('disconnected') || statusLower.includes('stopped')) {
+                mappedStatus = 'STOPPED';
+                console.log('⏹️ Mapeado para STOPPED');
+              } else {
+                mappedStatus = 'FAILED';
+                console.log('❌ Mapeado para FAILED');
+              }
+
+              console.log(`📱 Status mapeado para ${session.name}: ${mappedStatus}`);
+
+              // Extrair informações do número conectado se disponível
+              let meData: any = undefined;
+              if (statusData.number || statusData.wid || statusData.id) {
+                const phoneNumber = statusData.number || statusData.wid || statusData.id;
+                meData = {
+                  id: phoneNumber,
+                  pushName: statusData.pushName || statusData.name || 'Quepasa',
+                };
+                console.log(`📞 Número Quepasa detectado:`, meData);
+              }
+
+              // Verificar se estava em outro status e agora está WORKING (primeira vez conectando)
+              const previousStatus = (session as any).status;
+              const isNewlyConnected = mappedStatus === 'WORKING' && previousStatus !== 'WORKING';
+
+              // Atualizar status no banco (manter o token que já foi salvo/descoberto)
+              await WhatsAppSessionService.createOrUpdateSession({
+                name: session.name,
+                status: mappedStatus,
+                provider: 'QUEPASA',
+                tenantId: session.tenantId || undefined,
+                quepasaToken: sessionToken, // IMPORTANTE: preservar o token
+                me: meData
+              });
+
+              // Se acabou de conectar (WORKING), configurar webhook se campanha interativa estiver habilitada
+              if (isNewlyConnected) {
+                const fullSession = await prisma.whatsAppSession.findUnique({
+                  where: { name: session.name }
+                });
+
+                if (fullSession?.interactiveCampaignEnabled && fullSession?.webhookSecret) {
+                  const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+                  const webhookUrlForQuepasa = `${baseUrl}/api/webhooks/incoming/${fullSession.id}/${fullSession.webhookSecret}`;
+                  console.log(`🔗 Configurando webhook QuePasa para campanhas interativas (status sync): ${webhookUrlForQuepasa}`);
+
+                  const webhookResult = await configureQuepasaWebhook(sessionToken, webhookUrlForQuepasa);
+                  if (webhookResult.success) {
+                    console.log(`✅ Webhook QuePasa configurado com sucesso para ${session.name}`);
+                  } else {
+                    console.error(`❌ Erro ao configurar webhook QuePasa: ${webhookResult.error}`);
+                  }
+                }
+              }
+            }
+          } catch (quepasaError) {
+            console.warn(`⚠️ Erro ao sincronizar status Quepasa para ${session.name}:`, quepasaError);
           }
-        } catch (evolutionError) {
-          console.warn(`⚠️ Erro ao sincronizar status Evolution para ${session.name}:`, evolutionError);
         }
       }
+    } catch (quepasaError) {
+      console.warn('⚠️ Erro ao sincronizar Quepasa, mas continuando com dados do banco:', quepasaError);
+    }
+
+    // Sincronizar apenas sessões Evolution que já existem no banco DESTE tenant
+    // NÃO buscar sessões externas - sistema SaaS multi-tenant
+    try {
+      const allSessions = await WhatsAppSessionService.getAllSessions(tenantId);
+      const evolutionSessions = allSessions.filter(s => s.provider === 'EVOLUTION');
+
+      if (evolutionSessions.length > 0) {
+        console.log(`🔄 Atualizando status de ${evolutionSessions.length} sessões Evolution do tenant...`);
+
+        for (const session of evolutionSessions) {
+          try {
+            // Obter status atualizado da Evolution API
+            const status = await evolutionApiService.getInstanceStatus(session.name);
+            console.log(`🔍 Status Evolution para ${session.name}:`, status);
+
+            // Obter informações detalhadas da instância
+            const instanceInfo = await evolutionApiService.getInstanceInfo(session.name);
+
+            // Montar dados do 'me' quando conectado
+            let meData = undefined;
+            const evolutionData = instanceInfo as any;
+            if (status === 'WORKING' && (evolutionData.ownerJid || evolutionData.owner)) {
+              const jid = evolutionData.ownerJid || evolutionData.owner;
+              meData = {
+                id: jid,
+                pushName: evolutionData.profileName || instanceInfo.profileName || 'Usuário WhatsApp',
+                jid: jid
+              };
+            }
+
+            // Atualizar sessão no banco (já existe, só atualiza status)
+            if (status && ['WORKING', 'SCAN_QR_CODE', 'STOPPED', 'FAILED'].includes(status)) {
+              await WhatsAppSessionService.createOrUpdateSession({
+                name: session.name,
+                displayName: session.displayName,
+                status: status as 'WORKING' | 'SCAN_QR_CODE' | 'STOPPED' | 'FAILED',
+                provider: 'EVOLUTION',
+                me: meData,
+                qr: session.qr || undefined,
+                qrExpiresAt: session.qrExpiresAt || undefined,
+                tenantId: session.tenantId || undefined // Manter o tenantId original
+              });
+              console.log(`✅ Sessão Evolution "${session.name}" atualizada com status ${status}`);
+            }
+          } catch (instanceError) {
+            console.warn(`⚠️ Erro ao atualizar sessão Evolution ${session.name}:`, instanceError);
+          }
+        }
+      }
+    } catch (evolutionError) {
+      console.warn('⚠️ Erro ao sincronizar Evolution, mas continuando com dados do banco:', evolutionError);
     }
 
     // Retornar todas as sessões atualizadas do banco
@@ -153,15 +394,15 @@ router.get('/sessions/:sessionName', authMiddleware, async (req: AuthenticatedRe
 // Criar nova sessão
 router.post('/sessions', authMiddleware, checkConnectionQuota, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name, provider = 'WAHA' } = req.body;
-    console.log('➕ POST /sessions - name:', name, 'provider:', provider, 'user:', req.user?.email, 'tenantId:', req.tenantId);
+    const { name, provider = 'WAHA', interactiveCampaignEnabled = false } = req.body;
+    console.log('➕ POST /sessions - name:', name, 'provider:', provider, 'interactiveCampaign:', interactiveCampaignEnabled, 'user:', req.user?.email, 'tenantId:', req.tenantId);
 
     if (!name) {
       return res.status(400).json({ error: 'Nome da sessão é obrigatório' });
     }
 
-    if (!['WAHA', 'EVOLUTION'].includes(provider)) {
-      return res.status(400).json({ error: 'Provedor deve ser WAHA ou EVOLUTION' });
+    if (!['WAHA', 'EVOLUTION', 'QUEPASA'].includes(provider)) {
+      return res.status(400).json({ error: 'Provedor deve ser WAHA, EVOLUTION ou QUEPASA' });
     }
 
     // Usar tenantId do usuário autenticado (SUPERADMIN pode especificar tenant no body se necessário)
@@ -190,30 +431,129 @@ router.post('/sessions', authMiddleware, checkConnectionQuota, async (req: Authe
     }
 
     let result;
+    let webhookSecret: string | undefined;
+    let webhookUrl: string | undefined;
+
+    // Se campanha interativa habilitada, gerar webhook secret e URL
+    if (interactiveCampaignEnabled) {
+      webhookSecret = generateWebhookSecret();
+      console.log(`🔑 Webhook secret gerado para sessão ${realName}: ${webhookSecret.substring(0, 16)}...`);
+    }
 
     if (provider === 'EVOLUTION') {
       const { evolutionApiService } = await import('../services/evolutionApiService');
-      result = await evolutionApiService.createInstance(realName);
 
-      // Salvar no banco com provider Evolution, tenantId e displayName
+      // Se campanha interativa habilitada, construir URL do webhook
+      // Nota: sessionId será gerado após criar a sessão no banco
+      const tempSession = await prisma.whatsAppSession.create({
+        data: {
+          name: realName,
+          displayName,
+          status: 'SCAN_QR_CODE',
+          provider: 'EVOLUTION',
+          tenantId,
+          interactiveCampaignEnabled,
+          webhookSecret
+        }
+      });
+
+      if (interactiveCampaignEnabled && webhookSecret) {
+        const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+        webhookUrl = `${baseUrl}/api/webhooks/incoming/${tempSession.id}/${webhookSecret}`;
+        console.log(`🔗 Webhook URL para Evolution: ${webhookUrl}`);
+      }
+
+      result = await evolutionApiService.createInstance(realName, webhookUrl);
+
+      // Extrair QR code da resposta da criação (se disponível)
+      let qrCode: string | undefined;
+      let qrExpiresAt: Date | undefined;
+
+      if (result.qrcode?.base64) {
+        // QR code veio na resposta
+        qrCode = result.qrcode.base64.startsWith('data:image/')
+          ? result.qrcode.base64
+          : `data:image/png;base64,${result.qrcode.base64}`;
+        qrExpiresAt = new Date(Date.now() + 300000); // 5 minutos
+        console.log(`✅ QR Code Evolution recebido na criação para ${realName}`);
+      }
+
+      // Atualizar sessão com QR code
       await WhatsAppSessionService.createOrUpdateSession({
         name: realName,
         displayName,
         status: 'SCAN_QR_CODE',
         provider: 'EVOLUTION',
-        tenantId
+        tenantId,
+        qr: qrCode,
+        qrExpiresAt: qrExpiresAt,
+        interactiveCampaignEnabled,
+        webhookSecret
       });
+    } else if (provider === 'QUEPASA') {
+      // Quepasa - criar sessão e gerar token único
+      // O QR code será gerado quando o usuário clicar para conectar
+      const quepasaToken = generateQuepasaToken();
+      console.log(`🔑 Token único gerado para sessão QuePasa ${realName}: ${quepasaToken.substring(0, 16)}...`);
+
+      // Primeiro criar sessão no banco para obter o ID
+      const tempSession = await prisma.whatsAppSession.create({
+        data: {
+          name: realName,
+          displayName,
+          status: 'STOPPED',
+          provider: 'QUEPASA',
+          tenantId,
+          quepasaToken,
+          interactiveCampaignEnabled,
+          webhookSecret
+        }
+      });
+
+      // Se campanha interativa habilitada, gerar webhook URL
+      if (interactiveCampaignEnabled && webhookSecret) {
+        const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+        webhookUrl = `${baseUrl}/api/webhooks/incoming/${tempSession.id}/${webhookSecret}`;
+        console.log(`🔗 Webhook URL para QuePasa: ${webhookUrl}`);
+
+        // Nota: O webhook será configurado na API QuePasa quando a sessão conectar (status WORKING)
+        // porque precisamos do token válido e sessão ativa
+      }
+
+      result = { name: realName, status: 'STOPPED', provider: 'QUEPASA', token: quepasaToken, webhookUrl };
+
     } else {
       // WAHA (comportamento original)
-      result = await WahaSyncService.createSession(realName);
+      // Se campanha interativa habilitada, criar sessão primeiro para obter ID
+      const tempSession = await prisma.whatsAppSession.create({
+        data: {
+          name: realName,
+          displayName,
+          status: 'SCAN_QR_CODE',
+          provider: 'WAHA',
+          tenantId,
+          interactiveCampaignEnabled,
+          webhookSecret
+        }
+      });
 
-      // Para WAHA também salvar com tenantId e displayName
+      if (interactiveCampaignEnabled && webhookSecret) {
+        const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+        webhookUrl = `${baseUrl}/api/webhooks/incoming/${tempSession.id}/${webhookSecret}`;
+        console.log(`🔗 Webhook URL para WAHA: ${webhookUrl}`);
+      }
+
+      result = await WahaSyncService.createSession(realName, webhookUrl);
+
+      // Atualizar sessão
       await WhatsAppSessionService.createOrUpdateSession({
         name: realName,
         displayName,
         status: 'SCAN_QR_CODE',
         provider: 'WAHA',
-        tenantId
+        tenantId,
+        interactiveCampaignEnabled,
+        webhookSecret
       });
     }
 
@@ -250,16 +590,104 @@ router.post('/sessions/:sessionName/start', authMiddleware, async (req: Authenti
 
     let result;
     if (sessionProvider === 'EVOLUTION') {
-      // Usar Evolution API
-      result = await evolutionApiService.getQRCode(sessionName);
+      // Usar Evolution API - conectar e obter QR Code
+      try {
+        console.log(`🔄 Conectando instância Evolution ${sessionName}...`);
+        result = await evolutionApiService.getQRCode(sessionName);
 
-      // Atualizar status no banco
-      await WhatsAppSessionService.createOrUpdateSession({
-        name: sessionName,
-        status: 'SCAN_QR_CODE',
-        provider: 'EVOLUTION',
-        tenantId: sessionData.tenantId
-      });
+        // Se conseguiu obter QR, salvar no banco
+        if (result) {
+          const qrExpiresAt = new Date(Date.now() + 300000); // 5 minutos
+
+          await WhatsAppSessionService.createOrUpdateSession({
+            name: sessionName,
+            status: 'SCAN_QR_CODE',
+            provider: 'EVOLUTION',
+            tenantId: sessionData.tenantId,
+            qr: result,
+            qrExpiresAt: qrExpiresAt
+          });
+
+          console.log(`✅ Sessão Evolution ${sessionName} iniciada com QR Code salvo`);
+        }
+
+        // Retornar o QR code para o frontend
+        result = { qr: result, status: 'SCAN_QR_CODE' };
+      } catch (error: any) {
+        console.error(`❌ Erro ao conectar instância Evolution ${sessionName}:`, error.message);
+        throw new Error(`Erro ao iniciar sessão WhatsApp: ${error.message}`);
+      }
+    } else if (sessionProvider === 'QUEPASA') {
+      // Usar Quepasa API - gerar QR Code
+      try {
+        console.log(`🔄 Conectando instância Quepasa ${sessionName}...`);
+
+        // Buscar configurações do Quepasa
+        const quepasaConfig = await settingsService.getQuepasaConfig();
+
+        if (!quepasaConfig.url || !quepasaConfig.login) {
+          throw new Error('Configure as credenciais Quepasa nas configurações do sistema');
+        }
+
+        // Usar APENAS o token da sessão (não usar token global)
+        let sessionToken = sessionData.quepasaToken;
+
+        // Se não tiver token, gerar e salvar um novo (para sessões criadas antes da implementação)
+        if (!sessionToken) {
+          sessionToken = generateQuepasaToken();
+          console.log(`🔑 Gerando novo token para sessão ${sessionName} (sessão sem token): ${sessionToken.substring(0, 16)}...`);
+
+          await WhatsAppSessionService.createOrUpdateSession({
+            name: sessionName,
+            status: sessionData.status,
+            provider: 'QUEPASA',
+            tenantId: sessionData.tenantId,
+            quepasaToken: sessionToken
+          });
+          console.log(`💾 Token salvo para sessão ${sessionName}`);
+        }
+
+        console.log(`🔑 Usando token da sessão para ${sessionName}`);
+
+        // Fazer requisição para gerar QR Code
+        const qrResponse = await fetch(`${quepasaConfig.url}/scan`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'X-QUEPASA-USER': quepasaConfig.login,
+            'X-QUEPASA-TOKEN': sessionToken
+          }
+        });
+
+        if (!qrResponse.ok) {
+          throw new Error(`Erro ao gerar QR Code Quepasa: ${qrResponse.status} ${qrResponse.statusText}`);
+        }
+
+        // Converter resposta para base64
+        const imageBuffer = await qrResponse.arrayBuffer();
+        const base64Image = Buffer.from(imageBuffer).toString('base64');
+        const qrBase64 = `data:image/png;base64,${base64Image}`;
+
+        const qrExpiresAt = new Date(Date.now() + 300000); // 5 minutos
+
+        // Salvar QR no banco (preservando o token!)
+        await WhatsAppSessionService.createOrUpdateSession({
+          name: sessionName,
+          status: 'SCAN_QR_CODE',
+          provider: 'QUEPASA',
+          tenantId: sessionData.tenantId,
+          quepasaToken: sessionToken, // IMPORTANTE: preservar o token
+          qr: qrBase64,
+          qrExpiresAt: qrExpiresAt
+        });
+
+        console.log(`✅ Sessão Quepasa ${sessionName} iniciada com QR Code salvo (token: ${sessionToken.substring(0, 16)}...)`);
+
+        result = { qr: qrBase64, status: 'SCAN_QR_CODE' };
+      } catch (error: any) {
+        console.error(`❌ Erro ao conectar instância Quepasa ${sessionName}:`, error.message);
+        throw new Error(`Erro ao iniciar sessão Quepasa: ${error.message}`);
+      }
     } else {
       // Usar WAHA com chamada direta
       result = await wahaRequest(`/api/sessions/${sessionName}/start`, {
@@ -362,10 +790,10 @@ router.delete('/sessions/:sessionName', authMiddleware, async (req: Authenticate
     const tenantId = req.user?.role === 'SUPERADMIN' ? undefined : req.tenantId;
 
     // Verificar o provedor da sessão
-    let sessionProvider: 'WAHA' | 'EVOLUTION' = 'WAHA';
+    let sessionProvider: 'WAHA' | 'EVOLUTION' | 'QUEPASA' = 'WAHA';
     try {
       const savedSession = await WhatsAppSessionService.getSession(sessionName, tenantId);
-      sessionProvider = (savedSession.provider as 'WAHA' | 'EVOLUTION') || 'WAHA';
+      sessionProvider = (savedSession.provider as 'WAHA' | 'EVOLUTION' | 'QUEPASA') || 'WAHA';
     } catch (error) {
       console.error('❌ Sessão não encontrada ou não pertence ao tenant:', error);
       return res.status(404).json({ error: 'Sessão não encontrada' });
@@ -382,6 +810,59 @@ router.delete('/sessions/:sessionName', authMiddleware, async (req: Authenticate
         console.warn(`⚠️ Erro ao deletar ${sessionName} da Evolution API:`, error);
       }
       // Para Evolution, deletar manualmente do banco também
+      try {
+        await WhatsAppSessionService.deleteSession(sessionName, tenantId);
+        console.log(`✅ Sessão ${sessionName} removida do banco de dados`);
+      } catch (error) {
+        console.warn(`⚠️ Erro ao deletar ${sessionName} do banco:`, error);
+      }
+    } else if (sessionProvider === 'QUEPASA') {
+      try {
+        // Buscar configurações do Quepasa e dados da sessão
+        const quepasaConfig = await settingsService.getQuepasaConfig();
+        const savedSession = await WhatsAppSessionService.getSession(sessionName, tenantId);
+
+        if (quepasaConfig.url && quepasaConfig.login) {
+          // Usar o token da sessão salvo no banco
+          let sessionToken = (savedSession as any).quepasaToken;
+
+          console.log(`🗑️ Deletando servidor Quepasa - Token: ${sessionToken ? sessionToken.substring(0, 16) + '...' : 'SEM TOKEN'}`);
+
+          if (!sessionToken) {
+            console.warn(`⚠️ Sessão ${sessionName} não tem token Quepasa salvo, pulando deleção na API`);
+          } else {
+            console.log(`🗑️ Deletando servidor Quepasa via API DELETE /info...`);
+
+            // Deletar o servidor no Quepasa usando DELETE /info
+            const deleteResponse = await fetch(`${quepasaConfig.url}/info`, {
+              method: 'DELETE',
+              headers: {
+                'Accept': 'application/json',
+                'X-QUEPASA-TOKEN': sessionToken
+              }
+            });
+
+            console.log(`📡 Delete response status: ${deleteResponse.status} ${deleteResponse.statusText}`);
+
+            if (deleteResponse.ok) {
+              try {
+                const deleteData = await deleteResponse.json();
+                console.log(`✅ Servidor Quepasa deletado com sucesso:`, JSON.stringify(deleteData, null, 2));
+              } catch (jsonError) {
+                // Algumas APIs retornam 200 sem body
+                console.log(`✅ Servidor Quepasa deletado (resposta sem JSON)`);
+              }
+            } else {
+              const errorText = await deleteResponse.text();
+              console.warn(`⚠️ Erro ao deletar do Quepasa: ${deleteResponse.status} - ${errorText}`);
+            }
+          }
+        }
+      } catch (quepasaError) {
+        console.warn(`⚠️ Erro ao deletar ${sessionName} do Quepasa:`, quepasaError);
+      }
+
+      // Deletar do banco de dados
       try {
         await WhatsAppSessionService.deleteSession(sessionName, tenantId);
         console.log(`✅ Sessão ${sessionName} removida do banco de dados`);
@@ -428,7 +909,7 @@ router.get('/sessions/:sessionName/auth/qr', authMiddleware, async (req: Authent
     }
 
     // Verificar o provedor da sessão para rotear corretamente
-    let sessionProvider: 'WAHA' | 'EVOLUTION' = 'WAHA'; // Default para WAHA (compatibilidade)
+    let sessionProvider: 'WAHA' | 'EVOLUTION' | 'QUEPASA' = 'WAHA'; // Default para WAHA (compatibilidade)
     let sessionData: any;
     try {
       sessionData = await WhatsAppSessionService.getSession(sessionName, tenantId);
@@ -436,7 +917,7 @@ router.get('/sessions/:sessionName/auth/qr', authMiddleware, async (req: Authent
         provider: sessionData.provider,
         status: sessionData.status
       });
-      sessionProvider = (sessionData.provider as 'WAHA' | 'EVOLUTION') || 'WAHA';
+      sessionProvider = (sessionData.provider as 'WAHA' | 'EVOLUTION' | 'QUEPASA') || 'WAHA';
     } catch (error) {
       console.log(`⚠️ Sessão ${sessionName} não encontrada no banco ou não pertence ao tenant, assumindo WAHA`);
       return res.status(404).json({ error: 'Sessão não encontrada' });
@@ -474,6 +955,83 @@ router.get('/sessions/:sessionName/auth/qr', authMiddleware, async (req: Authent
         return res.status(500).json({
           error: 'Erro ao obter QR Code da Evolution API',
           details: evolutionError.message
+        });
+      }
+    } else if (sessionProvider === 'QUEPASA') {
+      try {
+        // Buscar configurações do Quepasa
+        const quepasaConfig = await settingsService.getQuepasaConfig();
+
+        if (!quepasaConfig.url || !quepasaConfig.login) {
+          throw new Error('Configure as credenciais Quepasa nas configurações do sistema');
+        }
+
+        // Usar APENAS o token da sessão (não usar token global)
+        let sessionToken = sessionData.quepasaToken;
+
+        // Se não tiver token, gerar e salvar um novo (para sessões criadas antes da implementação)
+        if (!sessionToken) {
+          sessionToken = generateQuepasaToken();
+          console.log(`🔑 Gerando novo token para sessão ${sessionName} (sessão sem token): ${sessionToken.substring(0, 16)}...`);
+
+          await WhatsAppSessionService.createOrUpdateSession({
+            name: sessionName,
+            status: sessionData.status,
+            provider: 'QUEPASA',
+            tenantId: sessionData.tenantId,
+            quepasaToken: sessionToken
+          });
+          console.log(`💾 Token salvo para sessão ${sessionName}`);
+        }
+
+        console.log(`🔑 Usando token da sessão para ${sessionName}`);
+
+        // Fazer requisição para gerar QR Code
+        const qrResponse = await fetch(`${quepasaConfig.url}/scan`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'X-QUEPASA-USER': quepasaConfig.login,
+            'X-QUEPASA-TOKEN': sessionToken
+          }
+        });
+
+        if (!qrResponse.ok) {
+          throw new Error(`Erro ao gerar QR Code Quepasa: ${qrResponse.status} ${qrResponse.statusText}`);
+        }
+
+        // Converter resposta para base64
+        const imageBuffer = await qrResponse.arrayBuffer();
+        const base64Image = Buffer.from(imageBuffer).toString('base64');
+        const qrBase64 = `data:image/png;base64,${base64Image}`;
+
+        const expiresAt = new Date(Date.now() + 300000); // 5 minutos
+
+        // Salvar o QR code no banco de dados (preservando o token!)
+        await WhatsAppSessionService.createOrUpdateSession({
+          name: sessionName,
+          status: 'SCAN_QR_CODE',
+          provider: 'QUEPASA',
+          quepasaToken: sessionToken, // IMPORTANTE: preservar o token
+          qr: qrBase64,
+          qrExpiresAt: expiresAt,
+          tenantId: sessionData.tenantId
+        });
+
+        console.log(`💾 QR code Quepasa salvo no banco para sessão ${sessionName} (token: ${sessionToken.substring(0, 16)}...)`);
+
+        return res.json({
+          qr: qrBase64,
+          expiresAt: expiresAt,
+          status: 'SCAN_QR_CODE',
+          provider: 'QUEPASA',
+          message: "QR code gerado via Quepasa API"
+        });
+      } catch (quepasaError: any) {
+        console.error(`❌ Erro ao obter QR da Quepasa API:`, quepasaError);
+        return res.status(500).json({
+          error: 'Erro ao obter QR Code da Quepasa API',
+          details: quepasaError.message
         });
       }
     } else {

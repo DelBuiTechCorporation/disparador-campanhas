@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { sendMessage, checkContactExists } from './wahaApiService';
 import { sendMessageViaEvolution, checkContactExistsEvolution } from './evolutionMessageService';
+import { sendMessageViaQuepasa, checkContactExistsQuepasa } from './quepasaMessageService';
 import { ContactService } from './contactService';
 import { openaiService } from './openaiService';
 import { groqService } from './groqService';
@@ -48,19 +49,12 @@ class CampaignSchedulerService {
 
   private async processCampaigns() {
     try {
-      // Buscar campanhas que devem ser iniciadas
+      // Buscar campanhas que devem ser iniciadas (apenas agendadas cujo horário já chegou)
       const campaignsToStart = await prisma.campaign.findMany({
         where: {
           status: 'PENDING',
-          OR: [
-            { startImmediately: true },
-            {
-              AND: [
-                { startImmediately: false },
-                { scheduledFor: { lte: new Date() } }
-              ]
-            }
-          ]
+          startImmediately: false,
+          scheduledFor: { lte: new Date() }
         },
         include: {
           session: true
@@ -69,6 +63,21 @@ class CampaignSchedulerService {
 
       for (const campaign of campaignsToStart) {
         await this.startCampaign(campaign);
+      }
+
+      // Buscar campanhas interativas agendadas que devem ser disparadas
+      const interactiveCampaignsToDispatch = await prisma.interactiveCampaign.findMany({
+        where: {
+          status: 'SCHEDULED',
+          scheduledDate: {
+            lte: new Date(),
+            gte: new Date(Date.now() - 60000) // Apenas últimos 60 segundos para evitar reprocessamento
+          }
+        }
+      });
+
+      for (const interactiveCampaign of interactiveCampaignsToDispatch) {
+        await this.dispatchInteractiveCampaign(interactiveCampaign);
       }
 
       // Processar campanhas em execução
@@ -226,6 +235,17 @@ class CampaignSchedulerService {
       const { name: selectedSession, provider } = selectedSessionInfo;
       console.log(`🚀 Distribuição sequencial - Usando sessão: ${selectedSession} (${provider}) para mensagem ${message.id}`);
 
+      // Buscar dados completos da sessão para obter o token QuePasa (se aplicável)
+      let sessionToken: string | undefined;
+      if (provider === 'QUEPASA') {
+        const sessionData = await prisma.whatsAppSession.findUnique({
+          where: { name: selectedSession },
+          select: { quepasaToken: true }
+        });
+        sessionToken = sessionData?.quepasaToken || undefined;
+        console.log(`🔑 Token QuePasa ${sessionToken ? 'encontrado' : 'não encontrado'} para sessão ${selectedSession}`);
+      }
+
       // Aplicar delay randomizado
       if (campaign.randomDelay > 0) {
         const randomDelay = Math.floor(Math.random() * campaign.randomDelay * 1000);
@@ -286,6 +306,8 @@ class CampaignSchedulerService {
 
       if (provider === 'EVOLUTION') {
         contactCheck = await checkContactExistsEvolution(selectedSession, message.contactPhone);
+      } else if (provider === 'QUEPASA') {
+        contactCheck = await checkContactExistsQuepasa(selectedSession, message.contactPhone, sessionToken);
       } else {
         contactCheck = await checkContactExists(selectedSession, message.contactPhone);
       }
@@ -316,6 +338,8 @@ class CampaignSchedulerService {
 
       if (provider === 'EVOLUTION') {
         console.log(`✅ Contact ${message.contactPhone} exists on Evolution. Using validated phone: ${contactCheck.validPhone}`);
+      } else if (provider === 'QUEPASA') {
+        console.log(`✅ Contact ${message.contactPhone} exists on Quepasa. Using validated phone: ${contactCheck.validPhone}`);
       } else {
         console.log(`✅ Contact ${message.contactPhone} exists on WAHA. Using chatId: ${contactCheck.chatId}`);
       }
@@ -330,6 +354,16 @@ class CampaignSchedulerService {
           processedContent,
           contact,
           campaign.tenantId
+        );
+      } else if (provider === 'QUEPASA') {
+        result = await this.sendMessageViaQuepasa(
+          selectedSession,
+          contactCheck.validPhone || message.contactPhone,
+          campaign.messageType,
+          processedContent,
+          contact,
+          campaign.tenantId,
+          sessionToken
         );
       } else {
         result = await this.sendMessageViaWaha(
@@ -691,6 +725,128 @@ class CampaignSchedulerService {
     }
   }
 
+  private async sendMessageViaQuepasa(sessionName: string, phone: string, messageType: string, content: any, contactData?: any, tenantId?: string, sessionToken?: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    try {
+      let result;
+
+      switch (messageType) {
+        case 'text':
+          result = await sendMessageViaQuepasa(sessionName, phone, { text: content.text }, sessionToken);
+          break;
+
+        case 'image':
+          result = await sendMessageViaQuepasa(sessionName, phone, {
+            image: { url: content.url },
+            caption: content.caption || ''
+          }, sessionToken);
+          break;
+
+        case 'video':
+          result = await sendMessageViaQuepasa(sessionName, phone, {
+            video: { url: content.url },
+            caption: content.caption || ''
+          }, sessionToken);
+          break;
+
+        case 'audio':
+          result = await sendMessageViaQuepasa(sessionName, phone, {
+            audio: { url: content.url }
+          }, sessionToken);
+          break;
+
+        case 'document':
+          result = await sendMessageViaQuepasa(sessionName, phone, {
+            document: { url: content.url },
+            fileName: content.fileName || 'documento.pdf',
+            caption: content.caption || ''
+          }, sessionToken);
+          break;
+
+        case 'openai':
+          // Gerar mensagem usando OpenAI
+          console.log('🤖 Gerando mensagem com OpenAI (Quepasa)...', content);
+
+          const openaiResult = await openaiService.generateMessage(content, contactData, tenantId);
+
+          if (!openaiResult.success) {
+            throw new Error(`OpenAI error: ${openaiResult.error}`);
+          }
+
+          console.log('✅ Mensagem gerada pela OpenAI (Quepasa):', openaiResult.message);
+
+          // Enviar a mensagem gerada como texto
+          result = await sendMessageViaQuepasa(sessionName, phone, { text: openaiResult.message }, sessionToken);
+          break;
+
+        case 'groq':
+          // Gerar mensagem usando Groq
+          console.log('⚡ Gerando mensagem com Groq (Quepasa)...', content);
+
+          const groqResult = await groqService.generateMessage(content, contactData, tenantId);
+
+          if (!groqResult.success) {
+            throw new Error(`Groq error: ${groqResult.error}`);
+          }
+
+          console.log('✅ Mensagem gerada pela Groq (Quepasa):', groqResult.message);
+
+          // Enviar a mensagem gerada como texto
+          result = await sendMessageViaQuepasa(sessionName, phone, { text: groqResult.message }, sessionToken);
+          break;
+
+        case 'sequence':
+          // Para sequência, enviar todos os itens com delay entre eles
+          if (!content.sequence || content.sequence.length === 0) {
+            throw new Error('Sequence is empty');
+          }
+
+          let lastResult;
+          for (let i = 0; i < content.sequence.length; i++) {
+            const item = content.sequence[i];
+
+            // Tratar tipo 'wait' como delay personalizado
+            if (item.type === 'wait') {
+              const waitTime = item.content?.waitTime || 30; // Default 30 segundos se não especificado
+              console.log(`⏰ Aplicando espera personalizada de ${waitTime} segundos (Quepasa)...`);
+              await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+
+              // Para o wait, consideramos como "sucesso" para continuar a sequência
+              lastResult = { success: true, messageId: 'wait-delay' };
+              console.log(`✅ Espera de ${waitTime} segundos concluída (Quepasa)`);
+              continue; // Pular para próximo item da sequência
+            }
+
+            lastResult = await this.sendMessageViaQuepasa(sessionName, phone, item.type, item.content, contactData, tenantId, sessionToken);
+
+            if (!lastResult.success) {
+              throw new Error(`Failed to send sequence item ${i + 1}: ${lastResult.error}`);
+            }
+
+            // Adicionar delay de 2-5 segundos entre mensagens da sequência para evitar spam (apenas entre mensagens reais)
+            if (i < content.sequence.length - 1 && content.sequence[i + 1].type !== 'wait') {
+              const sequenceDelay = Math.floor(Math.random() * 3000) + 2000; // 2-5 segundos
+              await new Promise(resolve => setTimeout(resolve, sequenceDelay));
+            }
+          }
+          result = lastResult;
+          break;
+
+        default:
+          throw new Error(`Unsupported message type for Quepasa: ${messageType}`);
+      }
+
+      return {
+        success: true,
+        messageId: (result as any)?.id || null
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
   private async sendMessageViaWaha(sessionName: string, phone: string, messageType: string, content: any, validatedChatId?: string, contactData?: any, tenantId?: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
       let result;
@@ -867,6 +1023,62 @@ class CampaignSchedulerService {
       }
     } catch (error) {
       console.error(`Error completing campaign ${campaignId}:`, error);
+    }
+  }
+
+  /**
+   * Dispara campanha interativa agendada
+   */
+  private async dispatchInteractiveCampaign(campaign: any) {
+    try {
+      console.log(`📅 Dispatching scheduled interactive campaign: ${campaign.name} (${campaign.id})`);
+
+      const { interactiveCampaignDispatchService } = await import('./interactiveCampaignDispatchService');
+
+      const result = await interactiveCampaignDispatchService.dispatchCampaign(campaign.id);
+
+      // Atualizar status para STARTED e limpar scheduledDate
+      await prisma.interactiveCampaign.update({
+        where: { id: campaign.id },
+        data: {
+          status: 'STARTED',
+          scheduledDate: null
+        }
+      });
+
+      console.log(`✅ Interactive campaign ${campaign.id} dispatched successfully:`, result);
+
+      // Notificar via WebSocket
+      if (result && campaign.tenantId && websocketService.isInitialized) {
+        await websocketService.notifyTenant(campaign.tenantId, {
+          title: 'Campanha Interativa Disparada',
+          message: `A campanha "${campaign.name}" foi disparada com sucesso. ${result.successCount} mensagens enviadas.`,
+          type: 'SUCCESS',
+          data: {
+            campaignId: campaign.id,
+            campaignName: campaign.name,
+            totalContacts: result.totalContacts,
+            successCount: result.successCount,
+            errorCount: result.errorCount
+          }
+        });
+      }
+    } catch (error) {
+      console.error(`Error dispatching interactive campaign ${campaign.id}:`, error);
+
+      // Notificar falha via WebSocket
+      if (campaign.tenantId && websocketService.isInitialized) {
+        await websocketService.notifyTenant(campaign.tenantId, {
+          title: 'Erro ao Disparar Campanha',
+          message: `Erro ao disparar a campanha "${campaign.name}".`,
+          type: 'ERROR',
+          data: {
+            campaignId: campaign.id,
+            campaignName: campaign.name,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }
+        });
+      }
     }
   }
 }

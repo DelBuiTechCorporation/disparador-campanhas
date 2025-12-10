@@ -13,6 +13,7 @@ interface Tenant {
   name: string;
   domain?: string;
   active: boolean;
+  allowedProviders?: string[]; // ['WAHA', 'EVOLUTION', 'QUEPASA']
   createdAt: string;
   updatedAt: string;
   _count?: {
@@ -59,6 +60,7 @@ interface TenantFormData {
     maxCampaigns: string;
     maxConnections: string;
   };
+  allowedProviders: string[]; // ['WAHA', 'EVOLUTION', 'QUEPASA']
 }
 
 interface UserFormData {
@@ -130,6 +132,9 @@ interface Settings {
   wahaApiKey: string;
   evolutionHost: string;
   evolutionApiKey: string;
+  quepasaUrl?: string;
+  quepasaLogin?: string;
+  quepasaPassword?: string;
   logoUrl?: string;
   companyName?: string;
   faviconUrl?: string;
@@ -152,6 +157,11 @@ const settingsSchema = z.object({
   evolutionApiKey: z.string().refine((val) => !val || val.length >= 10, {
     message: 'API Key deve ter pelo menos 10 caracteres ou estar vazia'
   }),
+  quepasaUrl: z.string().refine((val) => !val || z.string().url().safeParse(val).success, {
+    message: 'URL deve ser uma URL válida ou vazio'
+  }),
+  quepasaLogin: z.string().optional(),
+  quepasaPassword: z.string().optional(),
 });
 
 const generalSettingsSchema = z.object({
@@ -192,7 +202,8 @@ export function SuperAdminManagerPage() {
       maxContacts: '1000',
       maxCampaigns: '50',
       maxConnections: '5'
-    }
+    },
+    allowedProviders: ['WAHA', 'EVOLUTION', 'QUEPASA']
   });
   const [userFormData, setUserFormData] = useState<UserFormData>({
     nome: '',
@@ -205,7 +216,7 @@ export function SuperAdminManagerPage() {
   });
   const [tenantSearchQuery, setTenantSearchQuery] = useState('');
 
-  const [activeModal, setActiveModal] = useState<'waha' | 'evolution' | null>(null);
+  const [activeModal, setActiveModal] = useState<'waha' | 'evolution' | 'quepasa' | null>(null);
   const [integrationSettings, setIntegrationSettings] = useState<Settings | null>(null);
 
   // General settings states
@@ -335,6 +346,9 @@ export function SuperAdminManagerPage() {
         setValue('wahaApiKey', data.wahaApiKey);
         setValue('evolutionHost', data.evolutionHost);
         setValue('evolutionApiKey', data.evolutionApiKey);
+        setValue('quepasaUrl', data.quepasaUrl || '');
+        setValue('quepasaLogin', data.quepasaLogin || '');
+        setValue('quepasaPassword', data.quepasaPassword || '');
       }
     } catch (error) {
       console.error('Erro ao carregar configurações de integração:', error);
@@ -624,7 +638,8 @@ export function SuperAdminManagerPage() {
         maxContacts: '1000',
         maxCampaigns: '50',
         maxConnections: '5'
-      }
+      },
+      allowedProviders: ['WAHA', 'EVOLUTION', 'QUEPASA']
     });
     setIsModalOpen(true);
   };
@@ -643,7 +658,8 @@ export function SuperAdminManagerPage() {
         maxContacts: tenant.quota?.maxContacts?.toString() || '1000',
         maxCampaigns: tenant.quota?.maxCampaigns?.toString() || '50',
         maxConnections: tenant.quota?.maxConnections?.toString() || '5'
-      }
+      },
+      allowedProviders: tenant.allowedProviders || ['WAHA', 'EVOLUTION', 'QUEPASA']
     });
     setIsModalOpen(true);
   };
@@ -689,7 +705,8 @@ export function SuperAdminManagerPage() {
 
       const body: any = {
         name: formData.name,
-        quotas: formData.quotas
+        quotas: formData.quotas,
+        allowedProviders: formData.allowedProviders
       };
 
       if (!editingTenant) {
@@ -1298,7 +1315,7 @@ export function SuperAdminManagerPage() {
       {/* Modal for Create/Edit Tenant */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">
                 {editingTenant ? 'Editar Empresa' : 'Criar Nova Empresa'}
@@ -1306,162 +1323,263 @@ export function SuperAdminManagerPage() {
             </div>
 
             <form onSubmit={handleSubmitTenant} className="p-6">
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                    Nome da Empresa *
-                  </label>
-                  <input
-                    type="text"
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Nome da empresa"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-1">O identificador único será gerado automaticamente</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Coluna Esquerda - Dados da Empresa e Admin */}
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      </svg>
+                      Dados da Empresa
+                    </h4>
+                    <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                      Nome da Empresa *
+                    </label>
+                    <input
+                      type="text"
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Nome da empresa"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">O identificador único será gerado automaticamente</p>
+                  </div>
+
+                  {!editingTenant && (
+                    <div className="border-t border-gray-200 pt-4">
+                      <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
+                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        Usuário Administrador
+                      </h4>
+
+                      <div className="space-y-3">
+                        <div>
+                          <label htmlFor="adminNome" className="block text-sm font-medium text-gray-700 mb-1">
+                            Nome do Admin *
+                          </label>
+                          <input
+                            type="text"
+                            id="adminNome"
+                            value={formData.adminUser.nome}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              adminUser: { ...formData.adminUser, nome: e.target.value }
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Nome completo"
+                            required={!editingTenant}
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="adminEmail" className="block text-sm font-medium text-gray-700 mb-1">
+                            E-mail do Admin *
+                          </label>
+                          <input
+                            type="email"
+                            id="adminEmail"
+                            value={formData.adminUser.email}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              adminUser: { ...formData.adminUser, email: e.target.value }
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="admin@exemplo.com"
+                            required={!editingTenant}
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="adminSenha" className="block text-sm font-medium text-gray-700 mb-1">
+                            Senha do Admin *
+                          </label>
+                          <input
+                            type="password"
+                            id="adminSenha"
+                            value={formData.adminUser.senha}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              adminUser: { ...formData.adminUser, senha: e.target.value }
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Senha segura"
+                            required={!editingTenant}
+                            minLength={6}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="border-t border-gray-200 pt-4">
-                  <h4 className="text-md font-medium text-gray-900 mb-3">Limites e Quotas</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="maxUsers" className="block text-sm font-medium text-gray-700 mb-1">
-                        Máximo de Usuários *
-                      </label>
-                      <input
-                        type="number"
-                        id="maxUsers"
-                        min="1"
-                        value={formData.quotas.maxUsers}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          quotas: { ...formData.quotas, maxUsers: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="maxConnections" className="block text-sm font-medium text-gray-700 mb-1">
-                        Máximo de Conexões *
-                      </label>
-                      <input
-                        type="number"
-                        id="maxConnections"
-                        min="1"
-                        value={formData.quotas.maxConnections}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          quotas: { ...formData.quotas, maxConnections: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="maxContacts" className="block text-sm font-medium text-gray-700 mb-1">
-                        Máximo de Contatos *
-                      </label>
-                      <input
-                        type="number"
-                        id="maxContacts"
-                        min="1"
-                        value={formData.quotas.maxContacts}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          quotas: { ...formData.quotas, maxContacts: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="maxCampaigns" className="block text-sm font-medium text-gray-700 mb-1">
-                        Máximo de Campanhas *
-                      </label>
-                      <input
-                        type="number"
-                        id="maxCampaigns"
-                        min="1"
-                        value={formData.quotas.maxCampaigns}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          quotas: { ...formData.quotas, maxCampaigns: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        required
-                      />
+                {/* Coluna Direita - Limites e Provedores */}
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
+                      <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                      Limites e Quotas
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="maxUsers" className="block text-sm font-medium text-gray-700 mb-1">
+                          Máx. Usuários *
+                        </label>
+                        <input
+                          type="number"
+                          id="maxUsers"
+                          min="1"
+                          value={formData.quotas.maxUsers}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            quotas: { ...formData.quotas, maxUsers: e.target.value }
+                          })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="maxConnections" className="block text-sm font-medium text-gray-700 mb-1">
+                          Máx. Conexões *
+                        </label>
+                        <input
+                          type="number"
+                          id="maxConnections"
+                          min="1"
+                          value={formData.quotas.maxConnections}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            quotas: { ...formData.quotas, maxConnections: e.target.value }
+                          })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="maxContacts" className="block text-sm font-medium text-gray-700 mb-1">
+                          Máx. Contatos *
+                        </label>
+                        <input
+                          type="number"
+                          id="maxContacts"
+                          min="1"
+                          value={formData.quotas.maxContacts}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            quotas: { ...formData.quotas, maxContacts: e.target.value }
+                          })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="maxCampaigns" className="block text-sm font-medium text-gray-700 mb-1">
+                          Máx. Campanhas *
+                        </label>
+                        <input
+                          type="number"
+                          id="maxCampaigns"
+                          min="1"
+                          value={formData.quotas.maxCampaigns}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            quotas: { ...formData.quotas, maxCampaigns: e.target.value }
+                          })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
                     </div>
                   </div>
+
+                  <div className="border-t border-gray-200 pt-4">
+                    <h4 className="text-md font-medium text-gray-900 mb-2 flex items-center gap-2">
+                      <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      Provedores WhatsApp
+                    </h4>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs text-gray-500">Selecione quais provedores de API a empresa poderá utilizar</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allProviders = ['WAHA', 'EVOLUTION', 'QUEPASA'];
+                          const allSelected = allProviders.every(p => formData.allowedProviders.includes(p));
+                          setFormData({
+                            ...formData,
+                            allowedProviders: allSelected ? [] : allProviders
+                          });
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        {formData.allowedProviders.length === 3 ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200">
+                        <input
+                          type="checkbox"
+                          checked={formData.allowedProviders.includes('WAHA')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({ ...formData, allowedProviders: [...formData.allowedProviders, 'WAHA'] });
+                            } else {
+                              setFormData({ ...formData, allowedProviders: formData.allowedProviders.filter(p => p !== 'WAHA') });
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <img src="/iconewaha.png" alt="WAHA" className="w-6 h-6 object-contain" />
+                        <span className="text-sm font-medium text-gray-700">WAHA</span>
+                      </label>
+                      <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200">
+                        <input
+                          type="checkbox"
+                          checked={formData.allowedProviders.includes('EVOLUTION')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({ ...formData, allowedProviders: [...formData.allowedProviders, 'EVOLUTION'] });
+                            } else {
+                              setFormData({ ...formData, allowedProviders: formData.allowedProviders.filter(p => p !== 'EVOLUTION') });
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <img src="/iconeevolutionapi.png" alt="Evolution API" className="w-6 h-6 object-contain" />
+                        <span className="text-sm font-medium text-gray-700">Evolution API</span>
+                      </label>
+                      <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200">
+                        <input
+                          type="checkbox"
+                          checked={formData.allowedProviders.includes('QUEPASA')}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({ ...formData, allowedProviders: [...formData.allowedProviders, 'QUEPASA'] });
+                            } else {
+                              setFormData({ ...formData, allowedProviders: formData.allowedProviders.filter(p => p !== 'QUEPASA') });
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <img src="/iconequepasa.png" alt="Quepasa" className="w-6 h-6 object-contain" />
+                        <span className="text-sm font-medium text-gray-700">Quepasa</span>
+                      </label>
+                    </div>
+                    {formData.allowedProviders.length === 0 && (
+                      <p className="text-xs text-red-500 mt-2">Selecione pelo menos um provedor</p>
+                    )}
+                  </div>
                 </div>
-
-                {!editingTenant && (
-                  <>
-                    <div className="border-t border-gray-200 pt-4">
-                      <h4 className="text-md font-medium text-gray-900 mb-3">Usuário Administrador</h4>
-                    </div>
-
-                    <div>
-                      <label htmlFor="adminNome" className="block text-sm font-medium text-gray-700 mb-1">
-                        Nome do Admin *
-                      </label>
-                      <input
-                        type="text"
-                        id="adminNome"
-                        value={formData.adminUser.nome}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          adminUser: { ...formData.adminUser, nome: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Nome completo"
-                        required={!editingTenant}
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="adminEmail" className="block text-sm font-medium text-gray-700 mb-1">
-                        E-mail do Admin *
-                      </label>
-                      <input
-                        type="email"
-                        id="adminEmail"
-                        value={formData.adminUser.email}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          adminUser: { ...formData.adminUser, email: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="admin@exemplo.com"
-                        required={!editingTenant}
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="adminSenha" className="block text-sm font-medium text-gray-700 mb-1">
-                        Senha do Admin *
-                      </label>
-                      <input
-                        type="password"
-                        id="adminSenha"
-                        value={formData.adminUser.senha}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          adminUser: { ...formData.adminUser, senha: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Senha segura"
-                        required={!editingTenant}
-                        minLength={6}
-                      />
-                    </div>
-                  </>
-                )}
               </div>
 
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
@@ -1742,12 +1860,12 @@ export function SuperAdminManagerPage() {
           <div className="px-6 py-4 border-b border-gray-200">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Integrações</h2>
-              <p className="text-sm text-gray-600 mt-1">Configurações das APIs externas (WAHA e Evolution API)</p>
+              <p className="text-sm text-gray-600 mt-1">Configurações das APIs externas</p>
             </div>
           </div>
 
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* WAHA Card */}
               <div
                 onClick={() => setActiveModal('waha')}
@@ -1796,6 +1914,32 @@ export function SuperAdminManagerPage() {
                       : 'bg-gray-100 text-gray-600'
                   }`}>
                     {integrationSettings?.evolutionHost && integrationSettings?.evolutionApiKey ? 'Configurado' : 'Não configurado'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Quepasa Card */}
+              <div
+                onClick={() => setActiveModal('quepasa')}
+                className="bg-gray-50 hover:bg-gray-100 border-2 border-gray-200 hover:border-purple-300 rounded-lg p-6 cursor-pointer transition-all duration-200 flex flex-col items-center min-h-[180px] group"
+              >
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="w-28 h-16 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <img
+                      src="/logoquepasa.png?v=2"
+                      alt="Quepasa Logo"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                </div>
+                <div className="mt-auto text-center">
+                  <p className="text-xs text-gray-500 mb-2">WhatsApp API Quepasa</p>
+                  <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                    integrationSettings?.quepasaUrl && integrationSettings?.quepasaLogin && integrationSettings?.quepasaPassword
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {integrationSettings?.quepasaUrl && integrationSettings?.quepasaLogin && integrationSettings?.quepasaPassword ? 'Configurado' : 'Não configurado'}
                   </span>
                 </div>
               </div>
@@ -2212,6 +2356,99 @@ export function SuperAdminManagerPage() {
                   type="submit"
                   disabled={isSubmitting}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Quepasa */}
+      {activeModal === 'quepasa' && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2">
+                <img src="/logoquepasa.png?v=2" alt="Quepasa" className="w-6 h-6 object-contain" />
+                <h3 className="text-lg font-semibold text-gray-900">Configurar Quepasa</h3>
+              </div>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleFormSubmit(onIntegrationSubmit)} className="space-y-4">
+              <div>
+                <label htmlFor="quepasaUrl" className="block text-sm font-medium text-gray-700 mb-1">
+                  URL do Quepasa *
+                </label>
+                <input
+                  id="quepasaUrl"
+                  type="url"
+                  {...register('quepasaUrl')}
+                  placeholder="https://quepasa.exemplo.com.br"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                {errors.quepasaUrl && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {errors.quepasaUrl.message}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="quepasaLogin" className="block text-sm font-medium text-gray-700 mb-1">
+                  Login *
+                </label>
+                <input
+                  id="quepasaLogin"
+                  type="text"
+                  {...register('quepasaLogin')}
+                  placeholder="admin"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                {errors.quepasaLogin && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {errors.quepasaLogin.message}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="quepasaPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                  Senha *
+                </label>
+                <input
+                  id="quepasaPassword"
+                  type="password"
+                  {...register('quepasaPassword')}
+                  placeholder="••••••••••••••••"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                {errors.quepasaPassword && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {errors.quepasaPassword.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setActiveModal(null)}
+                  className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
                 >
                   {isSubmitting ? 'Salvando...' : 'Salvar'}
                 </button>

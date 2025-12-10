@@ -158,6 +158,20 @@ export const createCampaign = async (req: AuthenticatedRequest, res: Response) =
       scheduledFor
     } = req.body;
 
+    // Log detalhado da criação de campanha
+    console.log(`🔍 === CRIANDO CAMPANHA ===`);
+    console.log(`📝 Nome: ${nome}`);
+    console.log(`⏰ startImmediately: ${startImmediately} (tipo: ${typeof startImmediately})`);
+    console.log(`📅 scheduledFor (recebido): ${scheduledFor}`);
+    if (scheduledFor) {
+      const scheduledDate = new Date(scheduledFor);
+      console.log(`📅 scheduledFor (convertido): ${scheduledDate.toISOString()}`);
+      console.log(`🕐 Data/hora atual (UTC): ${new Date().toISOString()}`);
+      console.log(`⏱️  Diferença: ${scheduledDate.getTime() - Date.now()}ms (${Math.round((scheduledDate.getTime() - Date.now()) / 1000 / 60)} minutos)`);
+    }
+    console.log(`✅ Status será: ${startImmediately ? 'RUNNING' : 'PENDING'}`);
+    console.log(`🔍 =========================`);
+
     // Verificar se todas as sessões existem e estão ativas (com tenant isolation)
     const sessionWhere: any = {
       name: { in: sessionNames },
@@ -186,17 +200,25 @@ export const createCampaign = async (req: AuthenticatedRequest, res: Response) =
 
     // Buscar contatos usando ContactService com tenant isolation
     const tenantId = req.tenantId;
-    const contactsResponse = await ContactService.getContacts(undefined, 1, 10000, tenantId);
-    const allContacts = contactsResponse.contacts;
 
-    // Filtrar contatos que têm categoriaId correspondente aos IDs selecionados
-    const filteredContacts = allContacts.filter((contact: any) => {
-      if (!contact.categoriaId) {
-        return false;
+    // Buscar contatos que pertencem às categorias selecionadas
+    const whereContacts: any = {
+      categoriaId: { in: targetTags },
+      tenantId: tenantId
+    };
+
+    const filteredContacts = await prisma.contact.findMany({
+      where: whereContacts,
+      select: {
+        id: true,
+        nome: true,
+        telefone: true,
+        categoriaId: true
       }
-      // Verificar se a categoria do contato está nas categorias solicitadas
-      return targetTags.includes(contact.categoriaId);
     });
+
+    console.log(`📊 Categorias selecionadas:`, targetTags);
+    console.log(`📊 Contatos encontrados com essas categorias:`, filteredContacts.length);
 
     if (filteredContacts.length === 0) {
       return res.status(400).json({ error: 'Nenhum contato encontrado com as categorias selecionadas' });
@@ -538,8 +560,9 @@ export const getCampaignReport = async (req: AuthenticatedRequest, res: Response
 // Get available contact tags (categories)
 export const getContactTags = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // Buscar categorias usando CategoryService
-    const categoriesResponse = await CategoryService.getCategories();
+    // Buscar categorias usando CategoryService com tenant isolation
+    const tenantId = req.tenantId;
+    const categoriesResponse = await CategoryService.getCategories(undefined, 1, 999999, tenantId);
 
     // Retornar array com id e nome das categorias
     const tags = categoriesResponse.categories.map((categoria: any) => ({
@@ -582,5 +605,90 @@ export const getActiveSessions = async (req: AuthenticatedRequest, res: Response
   } catch (error) {
     console.error('Erro ao buscar sessões ativas:', error);
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+};
+
+export const downloadCampaignReport = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const XLSX = require('xlsx');
+
+    // Buscar campanha com mensagens
+    const campaign = await prisma.campaign.findUnique({
+      where: { id },
+      include: {
+        messages: {
+          orderBy: { criadoEm: 'asc' },
+          select: {
+            contactName: true,
+            contactPhone: true,
+            status: true,
+            sentAt: true,
+            errorMessage: true,
+            sessionName: true,
+            selectedVariation: true,
+            criadoEm: true
+          }
+        }
+      }
+    });
+
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada' });
+    }
+
+    // Preparar dados para o Excel
+    const data = campaign.messages.map(msg => ({
+      'Nome': msg.contactName || 'N/A',
+      'Telefone': msg.contactPhone || 'N/A',
+      'Status': msg.status === 'SENT' ? 'Enviado' : msg.status === 'FAILED' ? 'Falhou' : 'Pendente',
+      'Data de Envio': msg.sentAt ? new Date(msg.sentAt).toLocaleString('pt-BR') : 'N/A',
+      'Sessão': msg.sessionName || 'N/A',
+      'Variação': msg.selectedVariation !== null && msg.selectedVariation !== undefined ? msg.selectedVariation.toString() : 'N/A',
+      'Erro': msg.errorMessage || 'N/A'
+    }));
+
+    // Criar workbook e worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(data);
+
+    // Definir largura das colunas
+    ws['!cols'] = [
+      { wch: 25 },  // Nome
+      { wch: 18 },  // Telefone
+      { wch: 12 },  // Status
+      { wch: 20 },  // Data de Envio
+      { wch: 25 },  // Sessão
+      { wch: 10 },  // Variação
+      { wch: 50 }   // Erro
+    ];
+
+    // Aplicar estilos ao cabeçalho (células A1 até G1)
+    const headerCells = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1'];
+    headerCells.forEach(cell => {
+      if (ws[cell]) {
+        ws[cell].s = {
+          font: { bold: true, color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "1E3A5F" } },
+          alignment: { horizontal: "center", vertical: "center" }
+        };
+      }
+    });
+
+    // Adicionar worksheet ao workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Relatório');
+
+    // Gerar buffer do Excel
+    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // Definir headers para download
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="relatorio-${campaign.nome}.xlsx"`);
+    res.setHeader('Content-Length', excelBuffer.length.toString());
+
+    res.end(excelBuffer);
+  } catch (error) {
+    console.error('Erro ao gerar XLSX:', error);
+    res.status(500).json({ error: 'Erro ao gerar relatório XLSX' });
   }
 };

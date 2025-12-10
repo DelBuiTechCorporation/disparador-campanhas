@@ -176,6 +176,51 @@ class ApiService {
 
     return response.blob();
   }
+
+  // Bulk operations
+  async post(endpoint: string, data: any): Promise<any> {
+    return this.request(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Chatwoot integration
+  async getChatwootTags(): Promise<{ tags: Array<{ name: string; count: number }> }> {
+    return this.request('/chatwoot/tags');
+  }
+
+  async syncChatwootContacts(tagMappings: Array<{ chatwootTag: string; categoryId: string }>): Promise<{ imported: number; updated: number }> {
+    return this.request('/chatwoot/sync', {
+      method: 'POST',
+      body: JSON.stringify({ tagMappings }),
+    });
+  }
+
+  // Perfex CRM Integration
+  async getPerfexLeads(): Promise<{ success: boolean; leads: any[]; total: number }> {
+    return this.request('/perfex/leads');
+  }
+
+  async importPerfexLeads(leadIds: string[], categoryId: string): Promise<{ success: boolean; imported: number; updated: number; errors: number }> {
+    return this.request('/perfex/import', {
+      method: 'POST',
+      body: JSON.stringify({ leadIds, categoryId }),
+    });
+  }
+
+  async getPerfexStatuses(): Promise<{ success: boolean; statuses: Array<{ id: string; name: string; color?: string }> }> {
+    return this.request('/perfex/statuses');
+  }
+
+  async getPerfexSources(): Promise<{ success: boolean; sources: Array<{ id: string; name: string }> }> {
+    return this.request('/perfex/sources');
+  }
+
+  async getPerfexStaff(): Promise<{ success: boolean; staff: Array<{ staffid: string; firstname: string; lastname: string; email: string }> }> {
+    return this.request('/perfex/staff');
+  }
 }
 
 export const apiService = new ApiService();
+export const api = apiService;

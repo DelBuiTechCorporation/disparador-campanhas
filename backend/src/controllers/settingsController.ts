@@ -102,14 +102,14 @@ export const getSettings = async (req: AuthenticatedRequest, res: Response) => {
     // Buscar configurações globais
     const globalSettings = await settingsService.getSettings();
 
-    // Para configurações AI, usar tenantId do usuário, ou parâmetro tenantId para SUPERADMIN
+    // Para configurações AI e Chatwoot, usar tenantId do usuário, ou parâmetro tenantId para SUPERADMIN
     let effectiveTenantId = req.tenantId;
     if (req.user?.role === 'SUPERADMIN') {
       // SUPERADMIN pode gerenciar configurações de qualquer tenant
-      effectiveTenantId = (req.query.tenantId as string) || 'aa135abc-56bf-400a-b980-cc2a38f0a2b4';
+      effectiveTenantId = (req.query.tenantId as string) || req.tenantId;
     }
 
-    // Buscar configurações do tenant (APIs de IA)
+    // Buscar configurações do tenant (APIs de IA e Chatwoot)
     let tenantSettings = null;
     if (effectiveTenantId) {
       try {
@@ -119,11 +119,16 @@ export const getSettings = async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
-    // Combinar as configurações
+    // Combinar as configurações (Quepasa é global, não por tenant)
     const combinedSettings = {
       ...globalSettings,
       openaiApiKey: tenantSettings?.openaiApiKey || null,
-      groqApiKey: tenantSettings?.groqApiKey || null
+      groqApiKey: tenantSettings?.groqApiKey || null,
+      chatwootUrl: tenantSettings?.chatwootUrl || null,
+      chatwootAccountId: tenantSettings?.chatwootAccountId || null,
+      chatwootApiToken: tenantSettings?.chatwootApiToken || null,
+      perfexUrl: tenantSettings?.perfexUrl || null,
+      perfexToken: tenantSettings?.perfexToken || null
     };
 
     res.json(combinedSettings);
@@ -157,31 +162,39 @@ export const updateSettings = async (req: AuthenticatedRequest, res: Response) =
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { wahaHost, wahaApiKey, evolutionHost, evolutionApiKey, companyName, pageTitle, openaiApiKey, groqApiKey, tenantId } = req.body;
+    const { wahaHost, wahaApiKey, evolutionHost, evolutionApiKey, quepasaUrl, quepasaLogin, quepasaPassword, companyName, pageTitle, openaiApiKey, groqApiKey, chatwootUrl, chatwootAccountId, chatwootApiToken, perfexUrl, perfexToken, tenantId } = req.body;
 
-    // Atualizar configurações globais
+    // Atualizar configurações globais (WAHA, Evolution, Quepasa são globais)
     const globalSettings = await settingsService.updateSettings({
       wahaHost,
       wahaApiKey,
       evolutionHost,
       evolutionApiKey,
+      quepasaUrl,
+      quepasaLogin,
+      quepasaPassword,
       companyName,
       pageTitle
     });
 
-    // Para configurações AI, usar tenantId do usuário, ou parâmetro tenantId para SUPERADMIN
+    // Para configurações AI e Chatwoot, usar tenantId do usuário, ou parâmetro tenantId para SUPERADMIN
     let effectiveTenantId = req.tenantId;
     if (req.user?.role === 'SUPERADMIN') {
       // SUPERADMIN pode gerenciar configurações de qualquer tenant
-      effectiveTenantId = tenantId || 'aa135abc-56bf-400a-b980-cc2a38f0a2b4';
+      effectiveTenantId = tenantId || req.tenantId;
     }
 
-    // Atualizar configurações do tenant (APIs de IA)
+    // Atualizar configurações do tenant (APIs de IA, Chatwoot e Perfex)
     let tenantSettings = null;
-    if (effectiveTenantId && (openaiApiKey !== undefined || groqApiKey !== undefined)) {
+    if (effectiveTenantId && (openaiApiKey !== undefined || groqApiKey !== undefined || chatwootUrl !== undefined || chatwootAccountId !== undefined || chatwootApiToken !== undefined || perfexUrl !== undefined || perfexToken !== undefined)) {
       tenantSettings = await tenantSettingsService.updateTenantSettings(effectiveTenantId, {
         openaiApiKey,
-        groqApiKey
+        groqApiKey,
+        chatwootUrl,
+        chatwootAccountId,
+        chatwootApiToken,
+        perfexUrl,
+        perfexToken
       });
     }
 
@@ -189,7 +202,12 @@ export const updateSettings = async (req: AuthenticatedRequest, res: Response) =
     const combinedSettings = {
       ...globalSettings,
       openaiApiKey: tenantSettings?.openaiApiKey || null,
-      groqApiKey: tenantSettings?.groqApiKey || null
+      groqApiKey: tenantSettings?.groqApiKey || null,
+      chatwootUrl: tenantSettings?.chatwootUrl || null,
+      chatwootAccountId: tenantSettings?.chatwootAccountId || null,
+      chatwootApiToken: tenantSettings?.chatwootApiToken || null,
+      perfexUrl: tenantSettings?.perfexUrl || null,
+      perfexToken: tenantSettings?.perfexToken || null
     };
 
     res.json({

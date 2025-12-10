@@ -6,6 +6,7 @@ export interface Contact {
   observacoes?: string | null;
   categoriaId?: string | null;
   categoria?: Category | null;
+  perfexLeadId?: string | null;
   criadoEm: string;
   atualizadoEm: string;
 }

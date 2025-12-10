@@ -6,6 +6,49 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 export class TenantController {
+  // Obter provedores permitidos do tenant atual (para qualquer usuário autenticado)
+  static async getAllowedProviders(req: AuthenticatedRequest, res: Response) {
+    try {
+      // SuperAdmin pode especificar o tenant via header
+      let tenantId = req.user?.tenantId;
+
+      if (req.user?.role === 'SUPERADMIN') {
+        tenantId = req.headers['x-tenant-id'] as string || tenantId;
+      }
+
+      if (!tenantId) {
+        // Se não há tenant, retornar todos os provedores (para superadmin sem tenant selecionado)
+        return res.json({
+          success: true,
+          allowedProviders: ['WAHA', 'EVOLUTION', 'QUEPASA']
+        });
+      }
+
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { allowedProviders: true }
+      });
+
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          message: 'Tenant não encontrado'
+        });
+      }
+
+      res.json({
+        success: true,
+        allowedProviders: tenant.allowedProviders || ['WAHA', 'EVOLUTION', 'QUEPASA']
+      });
+    } catch (error) {
+      console.error('❌ TenantController.getAllowedProviders - erro:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erro interno do servidor'
+      });
+    }
+  }
+
   // Listar todos os tenants (SUPERADMIN only)
   static async listTenants(req: AuthenticatedRequest, res: Response) {
     try {
@@ -95,7 +138,7 @@ export class TenantController {
         });
       }
 
-      const { name, adminUser, quotas } = req.body;
+      const { name, adminUser, quotas, allowedProviders } = req.body;
 
       if (!name || !adminUser || !quotas) {
         return res.status(400).json({
@@ -103,6 +146,12 @@ export class TenantController {
           message: 'Nome, dados do usuário administrador e quotas são obrigatórios'
         });
       }
+
+      // Validar provedores permitidos (se não informado, usar todos)
+      const validProviders = ['WAHA', 'EVOLUTION', 'QUEPASA'];
+      const providers = Array.isArray(allowedProviders) && allowedProviders.length > 0
+        ? allowedProviders.filter((p: string) => validProviders.includes(p))
+        : validProviders;
 
       // Gerar slug automaticamente a partir do nome
       let baseSlug = name
@@ -145,7 +194,8 @@ export class TenantController {
           data: {
             slug,
             name,
-            active: true
+            active: true,
+            allowedProviders: providers
           }
         });
 
@@ -283,7 +333,7 @@ export class TenantController {
   static async updateTenant(req: AuthenticatedRequest, res: Response) {
     try {
       const { tenantId } = req.params;
-      const { name, active, quotas } = req.body;
+      const { name, active, quotas, allowedProviders } = req.body;
       console.log('🔄 TenantController.updateTenant - tenantId:', tenantId, 'data:', req.body);
 
       if (req.user?.role !== 'SUPERADMIN') {
@@ -293,13 +343,20 @@ export class TenantController {
         });
       }
 
+      // Validar provedores permitidos se fornecido
+      const validProviders = ['WAHA', 'EVOLUTION', 'QUEPASA'];
+      const providers = Array.isArray(allowedProviders)
+        ? allowedProviders.filter((p: string) => validProviders.includes(p))
+        : undefined;
+
       // Usar transação para atualizar tenant e quotas
       const result = await prisma.$transaction(async (tx) => {
         const updatedTenant = await tx.tenant.update({
           where: { id: tenantId },
           data: {
             ...(name && { name }),
-            ...(active !== undefined && { active })
+            ...(active !== undefined && { active }),
+            ...(providers && { allowedProviders: providers })
           }
         });
 

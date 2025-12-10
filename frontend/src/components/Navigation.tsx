@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 export function Navigation() {
   const location = useLocation();
-  const { settings } = useSettings();
+  const { settings, loading } = useSettings();
   const { user, logout } = useAuth();
 
   const menuItems = [
@@ -33,6 +33,15 @@ export function Navigation() {
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+        </svg>
+      )
+    },
+    {
+      path: '/campanhas/interativa',
+      label: 'Campanha Interativa',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       )
     },
@@ -72,7 +81,9 @@ export function Navigation() {
         {/* Ícone */}
         <div className="mb-8 flex items-center justify-center">
           <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center backdrop-blur-sm">
-            {settings?.iconUrl ? (
+            {loading ? (
+              <div className="h-8 w-8 bg-white/20 animate-pulse rounded"></div>
+            ) : settings?.iconUrl ? (
               <img
                 src={settings.iconUrl}
                 alt={settings?.companyName || 'Sistema'}
