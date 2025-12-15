@@ -70,6 +70,15 @@ export function WhatsAppConnectionsPage() {
   const [createSessionModalOpen, setCreateSessionModalOpen] = useState(false);
   const [providerDropdownOpen, setProviderDropdownOpen] = useState(false);
 
+  // Estados de paginação e filtros
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [totalSessions, setTotalSessions] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [sortBy, setSortBy] = useState('atualizadoEm');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
   // Preload das imagens dos provedores para carregamento instantâneo
   useEffect(() => {
     const images = [
@@ -125,6 +134,14 @@ export function WhatsAppConnectionsPage() {
       }
     };
   }, [selectedTenantId, tenantLoading]); // Recarrega quando o tenant mudar ou terminar de carregar
+
+  // Recarregar sessões quando filtros/ordenação/paginação mudarem
+  useEffect(() => {
+    if (tenantLoading || !selectedTenantId) {
+      return;
+    }
+    loadSessions();
+  }, [currentPage, itemsPerPage, searchTerm, statusFilter, sortBy, sortOrder]);
 
   // Polling para verificar se a conexão foi estabelecida quando o modal QR está aberto
   useEffect(() => {
@@ -184,7 +201,23 @@ export function WhatsAppConnectionsPage() {
       if (showLoading) {
         setLoading(true);
       }
-      const response = await authenticatedFetch('/api/waha/sessions');
+
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: itemsPerPage.toString(),
+        sortBy,
+        sortOrder
+      });
+
+      if (searchTerm) {
+        params.append('search', searchTerm);
+      }
+
+      if (statusFilter) {
+        params.append('status', statusFilter);
+      }
+
+      const response = await authenticatedFetch(`/api/waha/sessions?${params.toString()}`);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -193,7 +226,7 @@ export function WhatsAppConnectionsPage() {
       const data = await response.json();
 
       // Processar dados das sessões incluindo QR code salvo no banco
-      const processedSessions = data.map((session: any) => ({
+      const processedSessions = (data.sessions || data).map((session: any) => ({
         name: session.name,
         displayName: session.displayName || session.name,
         status: session.status || 'STOPPED',
@@ -204,6 +237,14 @@ export function WhatsAppConnectionsPage() {
       }));
 
       setSessions(processedSessions);
+      
+      // Se a resposta tem formato paginado
+      if (data.total !== undefined) {
+        setTotalSessions(data.total);
+      } else {
+        setTotalSessions(processedSessions.length);
+      }
+
       if (showLoading) {
         setLoading(false);
       }
@@ -473,7 +514,7 @@ export function WhatsAppConnectionsPage() {
     <>
       <Header
         title="Conexões WhatsApp"
-        subtitle={`${sessions.length} ${sessions.length === 1 ? 'sessão ativa' : 'sessões ativas'}`}
+        subtitle={`${totalSessions} ${totalSessions === 1 ? 'sessão encontrada' : 'sessões encontradas'}`}
         actions={
           <div className="flex gap-3">
             <button
@@ -493,6 +534,114 @@ export function WhatsAppConnectionsPage() {
       />
 
       <div className="p-6 space-y-6">
+
+      {/* Filtros e Ordenação */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+        <div className="flex flex-wrap gap-4 items-end">
+          {/* Busca por nome */}
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
+            <input
+              type="text"
+              placeholder="Nome da sessão ou conta..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            />
+          </div>
+
+          {/* Filtro por status */}
+          <div className="w-[160px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              <option value="">Todos</option>
+              <option value="WORKING">Conectado</option>
+              <option value="SCAN_QR_CODE">Aguardando QR</option>
+              <option value="STOPPED">Parado</option>
+              <option value="FAILED">Erro</option>
+            </select>
+          </div>
+
+          {/* Ordenar por */}
+          <div className="w-[160px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Ordenar por</label>
+            <select
+              value={sortBy}
+              onChange={(e) => {
+                setSortBy(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              <option value="atualizadoEm">Última atualização</option>
+              <option value="criadoEm">Data de criação</option>
+              <option value="displayName">Nome</option>
+              <option value="status">Status</option>
+              <option value="mePushName">Conta WhatsApp</option>
+            </select>
+          </div>
+
+          {/* Direção da ordenação */}
+          <div className="w-[120px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Ordem</label>
+            <select
+              value={sortOrder}
+              onChange={(e) => {
+                setSortOrder(e.target.value as 'asc' | 'desc');
+                setCurrentPage(1);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              <option value="desc">Decrescente</option>
+              <option value="asc">Crescente</option>
+            </select>
+          </div>
+
+          {/* Itens por página */}
+          <div className="w-[100px]">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Por página</label>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => {
+                setItemsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          {/* Botão limpar filtros */}
+          {(searchTerm || statusFilter || sortBy !== 'atualizadoEm' || sortOrder !== 'desc') && (
+            <button
+              onClick={() => {
+                setSearchTerm('');
+                setStatusFilter('');
+                setSortBy('atualizadoEm');
+                setSortOrder('desc');
+                setCurrentPage(1);
+              }}
+              className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md"
+            >
+              Limpar filtros
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Lista de Sessões */}
       <div className="bg-white rounded-lg shadow">
@@ -567,6 +716,95 @@ export function WhatsAppConnectionsPage() {
 
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Paginação */}
+        {totalSessions > 0 && (
+          <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+            <div className="text-sm text-gray-700">
+              Mostrando {((currentPage - 1) * itemsPerPage) + 1} a {Math.min(currentPage * itemsPerPage, totalSessions)} de {totalSessions} sessões
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(page => Math.max(page - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Anterior
+              </button>
+
+              <div className="flex items-center gap-1">
+                {(() => {
+                  const totalPages = Math.ceil(totalSessions / itemsPerPage);
+                  const pages = [];
+                  const maxVisiblePages = 5;
+                  
+                  let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+                  let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+                  
+                  if (endPage - startPage + 1 < maxVisiblePages) {
+                    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                  }
+
+                  if (startPage > 1) {
+                    pages.push(
+                      <button
+                        key={1}
+                        onClick={() => setCurrentPage(1)}
+                        className="px-3 py-2 text-sm rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      >
+                        1
+                      </button>
+                    );
+                    if (startPage > 2) {
+                      pages.push(<span key="ellipsis1" className="px-2 text-gray-500">...</span>);
+                    }
+                  }
+
+                  for (let i = startPage; i <= endPage; i++) {
+                    pages.push(
+                      <button
+                        key={i}
+                        onClick={() => setCurrentPage(i)}
+                        className={`px-3 py-2 text-sm rounded-md ${
+                          i === currentPage
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        {i}
+                      </button>
+                    );
+                  }
+
+                  if (endPage < totalPages) {
+                    if (endPage < totalPages - 1) {
+                      pages.push(<span key="ellipsis2" className="px-2 text-gray-500">...</span>);
+                    }
+                    pages.push(
+                      <button
+                        key={totalPages}
+                        onClick={() => setCurrentPage(totalPages)}
+                        className="px-3 py-2 text-sm rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      >
+                        {totalPages}
+                      </button>
+                    );
+                  }
+
+                  return pages;
+                })()}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(page => Math.min(page + 1, Math.ceil(totalSessions / itemsPerPage)))}
+                disabled={currentPage >= Math.ceil(totalSessions / itemsPerPage)}
+                className="px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Próximo
+              </button>
+            </div>
           </div>
         )}
       </div>

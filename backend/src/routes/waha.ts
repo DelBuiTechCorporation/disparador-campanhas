@@ -62,6 +62,16 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
     // Sempre usar o tenantId do token (mesmo para SUPERADMIN quando tem empresa selecionada)
     const tenantId = req.tenantId;
 
+    // Parâmetros de filtro, ordenação e paginação
+    const {
+      search = '',
+      status = '',
+      sortBy = 'atualizadoEm',
+      sortOrder = 'desc',
+      page = '1',
+      limit = '50'
+    } = req.query;
+
     // Sempre sincronizar sessões WAHA para pegar status atualizado (WORKING, SCAN_QR_CODE, etc)
     try {
       await WahaSyncService.syncAllSessions();
@@ -69,9 +79,18 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
       console.warn('⚠️ Erro ao sincronizar WAHA, mas continuando com dados do banco:', wahaError);
     }
 
-    // Retornar todas as sessões atualizadas do banco
-    const updatedSessions = await WhatsAppSessionService.getAllSessions(tenantId);
-    res.json(updatedSessions);
+    // Retornar todas as sessões atualizadas do banco com filtros
+    const result = await WhatsAppSessionService.getAllSessions({
+      tenantId,
+      search: String(search),
+      status: String(status),
+      sortBy: String(sortBy),
+      sortOrder: String(sortOrder) as 'asc' | 'desc',
+      page: Number(page),
+      limit: Number(limit)
+    });
+
+    res.json(result);
   } catch (error) {
     console.error('Erro ao listar sessões:', error);
     res.status(500).json({ error: 'Erro ao listar sessões WhatsApp' });

@@ -20,9 +20,38 @@ export interface WhatsAppSessionData {
   tenantId?: string;
 }
 
+export interface GetAllSessionsOptions {
+  tenantId?: string;
+  search?: string;
+  status?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+}
+
 export class WhatsAppSessionService {
-  static async getAllSessions(tenantId?: string) {
-    console.log('📋 WhatsAppSessionService.getAllSessions - tenantId:', tenantId);
+  static async getAllSessions(tenantIdOrOptions?: string | GetAllSessionsOptions) {
+    // Suporte a chamada antiga (apenas tenantId) e nova (objeto de opções)
+    let options: GetAllSessionsOptions = {};
+    
+    if (typeof tenantIdOrOptions === 'string') {
+      options.tenantId = tenantIdOrOptions;
+    } else if (tenantIdOrOptions) {
+      options = tenantIdOrOptions;
+    }
+
+    const {
+      tenantId,
+      search = '',
+      status = '',
+      sortBy = 'atualizadoEm',
+      sortOrder = 'desc',
+      page = 1,
+      limit = 50
+    } = options;
+
+    console.log('📋 WhatsAppSessionService.getAllSessions - options:', { tenantId, search, status, sortBy, sortOrder, page, limit });
 
     // Construir filtros dinâmicos
     const where: any = {};
@@ -32,14 +61,41 @@ export class WhatsAppSessionService {
       where.tenantId = tenantId;
     }
 
-    const sessions = await prisma.whatsAppSession.findMany({
-      where,
-      orderBy: { atualizadoEm: 'desc' }
-    });
+    // Filtro por busca (nome ou displayName)
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { displayName: { contains: search, mode: 'insensitive' } },
+        { mePushName: { contains: search, mode: 'insensitive' } }
+      ];
+    }
 
-    console.log('📋 WhatsAppSessionService.getAllSessions - sessões encontradas:', sessions.length);
+    // Filtro por status
+    if (status && ['WORKING', 'SCAN_QR_CODE', 'STOPPED', 'FAILED'].includes(status)) {
+      where.status = status;
+    }
 
-    return sessions.map(session => ({
+    // Configurar ordenação
+    const validSortFields = ['atualizadoEm', 'criadoEm', 'name', 'displayName', 'status', 'mePushName'];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'atualizadoEm';
+    const sortDirection = sortOrder === 'asc' ? 'asc' : 'desc';
+
+    // Calcular skip para paginação
+    const skip = (page - 1) * limit;
+
+    const [sessions, total] = await Promise.all([
+      prisma.whatsAppSession.findMany({
+        where,
+        orderBy: { [sortField]: sortDirection },
+        skip,
+        take: limit
+      }),
+      prisma.whatsAppSession.count({ where })
+    ]);
+
+    console.log('📋 WhatsAppSessionService.getAllSessions - sessões encontradas:', sessions.length, 'de', total);
+
+    const mappedSessions = sessions.map(session => ({
       name: session.name,
       displayName: session.displayName || session.name,
       status: session.status,
@@ -56,6 +112,14 @@ export class WhatsAppSessionService {
       assignedWorker: session.assignedWorker,
       tenantId: session.tenantId
     }));
+
+    return {
+      sessions: mappedSessions,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    };
   }
 
   static async getSession(name: string, tenantId?: string) {
