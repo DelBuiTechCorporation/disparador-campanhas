@@ -84,7 +84,8 @@ export class WahaSyncService {
       }
 
       // Buscar sessões atualizadas do banco
-      const dbSessions = await WhatsAppSessionService.getAllSessions();
+      const result = await WhatsAppSessionService.getAllSessions();
+      const dbSessions = result.sessions;
       console.log(`💾 Banco de dados possui ${dbSessions.length} sessões`);
 
       return dbSessions;
@@ -92,7 +93,8 @@ export class WahaSyncService {
       console.warn('⚠️ Erro na sincronização com WAHA API:', error);
 
       // Em caso de erro, retornar apenas dados do banco
-      const dbSessions = await WhatsAppSessionService.getAllSessions();
+      const result = await WhatsAppSessionService.getAllSessions();
+      const dbSessions = result.sessions;
       console.log(`💾 Retornando ${dbSessions.length} sessões do banco (fallback)`);
 
       return dbSessions;
