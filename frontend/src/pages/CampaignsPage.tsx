@@ -83,11 +83,18 @@ export function CampaignsPage() {
   const [reportCurrentPage, setReportCurrentPage] = useState(1);
   const [reportItemsPerPage] = useState(8);
   const [campaignsCurrentPage, setCampaignsCurrentPage] = useState(1);
-  const [campaignsPerPage] = useState(10);
+  const [campaignsPerPage, setCampaignsPerPage] = useState(25);
+  const [campaignsTotal, setCampaignsTotal] = useState(0);
   const [contactTags, setContactTags] = useState<ContactTag[]>([]);
   const [whatsappSessions, setWhatsappSessions] = useState<WhatsAppSession[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<{ [key: number]: boolean }>({});
   const [fileInfos, setFileInfos] = useState<{ [key: number]: { name: string, size: number, type: string } }>({});
+  
+  // Filtros e ordenação
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [sortBy, setSortBy] = useState('criadoEm');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   
   // Business Hours Modal states
   const [showBusinessHoursModal, setShowBusinessHoursModal] = useState(false);
@@ -119,6 +126,11 @@ export function CampaignsPage() {
     loadContactTags();
     loadWhatsAppSessions();
   }, []);
+
+  // Recarregar campanhas quando filtros/ordenação/paginação mudarem
+  useEffect(() => {
+    loadCampaigns();
+  }, [campaignsCurrentPage, campaignsPerPage, searchTerm, statusFilter, sortBy, sortOrder]);
 
   // Update countdown every second for running campaigns
   useEffect(() => {
@@ -206,12 +218,28 @@ export function CampaignsPage() {
   const loadCampaigns = async () => {
     try {
       setLoading(true);
-      const response = await authenticatedFetch('/api/campaigns');
+      const params = new URLSearchParams({
+        page: campaignsCurrentPage.toString(),
+        limit: campaignsPerPage.toString(),
+        sortBy,
+        sortOrder
+      });
+      
+      if (searchTerm) {
+        params.append('search', searchTerm);
+      }
+      
+      if (statusFilter) {
+        params.append('status', statusFilter);
+      }
+      
+      const response = await authenticatedFetch(`/api/campaigns?${params.toString()}`);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
       const data = await response.json();
       setCampaigns(data.campaigns || []);
+      setCampaignsTotal(data.total || 0);
     } catch (error) {
       console.error('Erro ao carregar campanhas:', error);
       toast.error('Erro ao carregar campanhas');
@@ -755,7 +783,7 @@ export function CampaignsPage() {
     <>
       <Header
         title="Campanhas"
-        subtitle={`${campaigns.length} campanhas ativas`}
+        subtitle={`${campaignsTotal} campanhas encontradas`}
         actions={
           <button
             onClick={() => setShowCreateModal(true)}
@@ -767,6 +795,116 @@ export function CampaignsPage() {
       />
 
       <div className="p-6 space-y-6">
+        {/* Filtros e Ordenação */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+          <div className="flex flex-wrap gap-4 items-end">
+            {/* Busca por nome */}
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
+              <input
+                type="text"
+                placeholder="Nome da campanha..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCampaignsCurrentPage(1);
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+
+            {/* Filtro por status */}
+            <div className="w-[160px]">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCampaignsCurrentPage(1);
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="">Todos</option>
+                <option value="PENDING">Aguardando</option>
+                <option value="RUNNING">Executando</option>
+                <option value="PAUSED">Pausada</option>
+                <option value="COMPLETED">Concluída</option>
+                <option value="FAILED">Falha</option>
+              </select>
+            </div>
+
+            {/* Ordenar por */}
+            <div className="w-[160px]">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ordenar por</label>
+              <select
+                value={sortBy}
+                onChange={(e) => {
+                  setSortBy(e.target.value);
+                  setCampaignsCurrentPage(1);
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="criadoEm">Data de criação</option>
+                <option value="nome">Nome</option>
+                <option value="status">Status</option>
+                <option value="totalContacts">Total de contatos</option>
+                <option value="sentCount">Enviados</option>
+                <option value="startedAt">Data de início</option>
+              </select>
+            </div>
+
+            {/* Direção da ordenação */}
+            <div className="w-[120px]">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ordem</label>
+              <select
+                value={sortOrder}
+                onChange={(e) => {
+                  setSortOrder(e.target.value as 'asc' | 'desc');
+                  setCampaignsCurrentPage(1);
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="desc">Decrescente</option>
+                <option value="asc">Crescente</option>
+              </select>
+            </div>
+
+            {/* Itens por página */}
+            <div className="w-[100px]">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Por página</label>
+              <select
+                value={campaignsPerPage}
+                onChange={(e) => {
+                  setCampaignsPerPage(Number(e.target.value));
+                  setCampaignsCurrentPage(1);
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+
+            {/* Botão limpar filtros */}
+            {(searchTerm || statusFilter || sortBy !== 'criadoEm' || sortOrder !== 'desc') && (
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setStatusFilter('');
+                  setSortBy('criadoEm');
+                  setSortOrder('desc');
+                  setCampaignsCurrentPage(1);
+                }}
+                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md"
+              >
+                Limpar filtros
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="px-6 py-4 border-b border-gray-200">
             <h3 className="text-lg font-medium text-gray-900">Campanhas Criadas</h3>
@@ -902,6 +1040,95 @@ export function CampaignsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Paginação */}
+          {campaignsTotal > 0 && (
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+              <div className="text-sm text-gray-700">
+                Mostrando {((campaignsCurrentPage - 1) * campaignsPerPage) + 1} a {Math.min(campaignsCurrentPage * campaignsPerPage, campaignsTotal)} de {campaignsTotal} campanhas
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCampaignsCurrentPage(page => Math.max(page - 1, 1))}
+                  disabled={campaignsCurrentPage === 1}
+                  className="px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Anterior
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {(() => {
+                    const totalPages = Math.ceil(campaignsTotal / campaignsPerPage);
+                    const pages = [];
+                    const maxVisiblePages = 5;
+                    
+                    let startPage = Math.max(1, campaignsCurrentPage - Math.floor(maxVisiblePages / 2));
+                    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+                    
+                    if (endPage - startPage + 1 < maxVisiblePages) {
+                      startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                    }
+
+                    if (startPage > 1) {
+                      pages.push(
+                        <button
+                          key={1}
+                          onClick={() => setCampaignsCurrentPage(1)}
+                          className="px-3 py-2 text-sm rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300"
+                        >
+                          1
+                        </button>
+                      );
+                      if (startPage > 2) {
+                        pages.push(<span key="ellipsis1" className="px-2 text-gray-500">...</span>);
+                      }
+                    }
+
+                    for (let i = startPage; i <= endPage; i++) {
+                      pages.push(
+                        <button
+                          key={i}
+                          onClick={() => setCampaignsCurrentPage(i)}
+                          className={`px-3 py-2 text-sm rounded-md ${
+                            i === campaignsCurrentPage
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                        >
+                          {i}
+                        </button>
+                      );
+                    }
+
+                    if (endPage < totalPages) {
+                      if (endPage < totalPages - 1) {
+                        pages.push(<span key="ellipsis2" className="px-2 text-gray-500">...</span>);
+                      }
+                      pages.push(
+                        <button
+                          key={totalPages}
+                          onClick={() => setCampaignsCurrentPage(totalPages)}
+                          className="px-3 py-2 text-sm rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300"
+                        >
+                          {totalPages}
+                        </button>
+                      );
+                    }
+
+                    return pages;
+                  })()}
+                </div>
+
+                <button
+                  onClick={() => setCampaignsCurrentPage(page => Math.min(page + 1, Math.ceil(campaignsTotal / campaignsPerPage)))}
+                  disabled={campaignsCurrentPage >= Math.ceil(campaignsTotal / campaignsPerPage)}
+                  className="px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Próximo
+                </button>
+              </div>
             </div>
           )}
         </div>

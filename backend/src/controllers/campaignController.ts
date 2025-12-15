@@ -27,7 +27,14 @@ export const campaignValidation = [
 // List all campaigns
 export const listCampaigns = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { page = 1, limit = 10, search = '' } = req.query;
+    const { 
+      page = 1, 
+      limit = 50, // Aumentado de 10 para 50 por padrão
+      search = '',
+      status = '', // Filtro por status: PENDING, RUNNING, COMPLETED, PAUSED, FAILED
+      sortBy = 'criadoEm', // Campo para ordenação
+      sortOrder = 'desc' // Direção: asc ou desc
+    } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
     // Filtros base
@@ -38,13 +45,23 @@ export const listCampaigns = async (req: AuthenticatedRequest, res: Response) =>
       where.tenantId = req.tenantId;
     }
 
-    // Filtro de busca
+    // Filtro de busca por nome
     if (search) {
       where.nome = {
         contains: String(search),
         mode: 'insensitive'
       };
     }
+
+    // Filtro por status
+    if (status && ['PENDING', 'RUNNING', 'COMPLETED', 'PAUSED', 'FAILED'].includes(String(status))) {
+      where.status = String(status);
+    }
+
+    // Configurar ordenação
+    const validSortFields = ['criadoEm', 'nome', 'status', 'totalContacts', 'sentCount', 'startedAt', 'completedAt'];
+    const sortField = validSortFields.includes(String(sortBy)) ? String(sortBy) : 'criadoEm';
+    const sortDirection = String(sortOrder).toLowerCase() === 'asc' ? 'asc' : 'desc';
 
     const [campaigns, total] = await Promise.all([
       prisma.campaign.findMany({
@@ -66,7 +83,7 @@ export const listCampaigns = async (req: AuthenticatedRequest, res: Response) =>
           }
         },
         orderBy: {
-          criadoEm: 'desc'
+          [sortField]: sortDirection
         },
         skip,
         take: Number(limit)
