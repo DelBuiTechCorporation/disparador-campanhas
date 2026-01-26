@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "tenants" ADD COLUMN IF NOT EXISTS "allowed_providers" TEXT[] DEFAULT ARRAY['WAHA', 'EVOLUTION', 'QUEPASA']::TEXT[];

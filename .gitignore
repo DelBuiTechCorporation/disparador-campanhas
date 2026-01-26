@@ -6,4 +6,27 @@ uploads/
 .DS_Store
 .vscode/
 .idea/
-CLAUDE.md
+
+# Documentação interna (não subir ao GitHub)
+CAMPANHA_INTERATIVA_API.md
+CAMPANHA_INTERATIVA_README.md
+CAMPANHA_INTERATIVA_TESTES.md
+INSTALL_DEPENDENCIES.md
+RELEASE_v0.0.3.txt
+apiquepasa.txt
+
+# Screenshots e prints
+prints/
+
+# Scripts auxiliares e testes
+recreate-repo.sh
+test_dispatch_teste1.js
+migrate-sessions-to-connections.sql
+
+# Scripts de teste do backend
+backend/create_test_campaign.js
+backend/create_test_interactive_campaign.js
+backend/dispatch_manual.js
+backend/dispatch_teste11.js
+backend/test_dispatch_validation.js
+backend/debug-campaign.js

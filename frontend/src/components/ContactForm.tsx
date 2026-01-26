@@ -37,6 +37,8 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
   const {
     register,
     handleSubmit,
+    reset,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ContactFormData>({
     resolver: zodResolver(contactSchema),
@@ -52,6 +54,31 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
   useEffect(() => {
     loadCategories();
   }, []);
+
+  // Reset form when contact changes AND categories are loaded
+  useEffect(() => {
+    if (contact && !loadingCategories) {
+      console.log('🔄 Resetting form with contact:', contact);
+      console.log('📋 categoriaId from contact:', contact.categoriaId);
+      console.log('📦 Categories loaded:', categories.length);
+
+      reset({
+        nome: contact.nome || '',
+        telefone: contact.telefone || '',
+        email: contact.email || '',
+        observacoes: contact.observacoes || '',
+        categoriaId: contact.categoriaId || '',
+      });
+
+      // Força o setValue após reset para garantir que o select seja atualizado
+      setTimeout(() => {
+        if (contact.categoriaId) {
+          setValue('categoriaId', contact.categoriaId);
+          console.log('✅ setValue categoriaId:', contact.categoriaId);
+        }
+      }, 100);
+    }
+  }, [contact, categories, loadingCategories, reset, setValue]);
 
   const loadCategories = async () => {
     try {

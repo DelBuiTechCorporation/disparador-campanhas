@@ -84,8 +84,7 @@ export class WahaSyncService {
       }
 
       // Buscar sessões atualizadas do banco
-      const result = await WhatsAppSessionService.getAllSessions();
-      const dbSessions = result.sessions;
+      const dbSessions = await WhatsAppSessionService.getAllSessions();
       console.log(`💾 Banco de dados possui ${dbSessions.length} sessões`);
 
       return dbSessions;
@@ -93,8 +92,7 @@ export class WahaSyncService {
       console.warn('⚠️ Erro na sincronização com WAHA API:', error);
 
       // Em caso de erro, retornar apenas dados do banco
-      const result = await WhatsAppSessionService.getAllSessions();
-      const dbSessions = result.sessions;
+      const dbSessions = await WhatsAppSessionService.getAllSessions();
       console.log(`💾 Retornando ${dbSessions.length} sessões do banco (fallback)`);
 
       return dbSessions;
@@ -147,14 +145,27 @@ export class WahaSyncService {
   /**
    * Cria uma nova sessão na WAHA API e salva no banco
    */
-  static async createSession(name: string): Promise<any> {
-    const sessionData = {
+  static async createSession(name: string, webhookUrl?: string): Promise<any> {
+    const sessionData: any = {
       name,
       config: {
         proxy: null,
         webhooks: []
       }
     };
+
+    // Se webhookUrl fornecida, adicionar ao array de webhooks
+    if (webhookUrl) {
+      sessionData.config.webhooks = [
+        {
+          url: webhookUrl,
+          events: ['message.any'],
+          hmac: null,
+          retries: null,
+          customHeaders: null
+        }
+      ];
+    }
 
     try {
       // Criar na WAHA API

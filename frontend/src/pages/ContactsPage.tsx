@@ -197,7 +197,7 @@ export function ContactsPage() {
                   {isMenuOpen && (
                     <>
                       <div
-                        className="fixed inset-0 z-10"
+                        className="fixed inset-0 z-10 bg-black/5"
                         onClick={() => setIsMenuOpen(false)}
                       />
                       <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">

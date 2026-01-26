@@ -1,7 +1,10 @@
 import * as fs from 'fs';
 import csvParser from 'csv-parser';
+import { PrismaClient } from '@prisma/client';
 import { ContactService } from './contactService';
 import { ContactInput, ImportResult } from '../types';
+
+const prisma = new PrismaClient();
 
 interface CSVRow {
   nome?: string;
@@ -13,6 +16,42 @@ interface CSVRow {
 }
 
 export class CSVImportService {
+  /**
+   * Verifica se o tenant tem quota disponível para importar os contatos
+   */
+  static async checkQuotaForImport(tenantId: string, contactsToImport: number): Promise<{ allowed: boolean; message?: string; remaining?: number }> {
+    const tenantQuota = await prisma.tenantQuota.findUnique({
+      where: { tenantId },
+      include: {
+        tenant: {
+          include: {
+            _count: {
+              select: { contacts: true }
+            }
+          }
+        }
+      }
+    });
+
+    if (!tenantQuota) {
+      return { allowed: false, message: 'Configuração de quotas não encontrada para este tenant.' };
+    }
+
+    const currentContacts = tenantQuota.tenant._count.contacts;
+    const maxContacts = tenantQuota.maxContacts;
+    const remaining = maxContacts - currentContacts;
+
+    if (contactsToImport > remaining) {
+      return {
+        allowed: false,
+        message: `Limite de contatos seria excedido. Atual: ${currentContacts}/${maxContacts}. Tentando importar: ${contactsToImport}. Disponível: ${remaining}.`,
+        remaining
+      };
+    }
+
+    return { allowed: true, remaining };
+  }
+
   static async importContacts(filePath: string, tenantId: string): Promise<ImportResult> {
     const results: CSVRow[] = [];
     const errors: string[] = [];
@@ -29,6 +68,28 @@ export class CSVImportService {
         })
         .on('end', async () => {
           console.log(`📊 CSVImportService - Processando ${results.length} linhas do CSV para tenantId: ${tenantId}`);
+
+          // Verificar quota ANTES de importar
+          const quotaCheck = await CSVImportService.checkQuotaForImport(tenantId, results.length);
+          if (!quotaCheck.allowed) {
+            console.log(`❌ CSVImportService - Quota excedida: ${quotaCheck.message}`);
+            // Limpar arquivo temporário
+            try {
+              fs.unlinkSync(filePath);
+            } catch (error) {
+              console.warn('Erro ao limpar arquivo temporário:', error);
+            }
+            resolve({
+              success: false,
+              totalRows: results.length,
+              successfulImports: 0,
+              failedImports: results.length,
+              errors: [quotaCheck.message || 'Limite de contatos excedido']
+            });
+            return;
+          }
+
+          console.log(`✅ CSVImportService - Quota verificada. Disponível: ${quotaCheck.remaining} contatos`);
 
           for (let i = 0; i < results.length; i++) {
             const row = results[i];

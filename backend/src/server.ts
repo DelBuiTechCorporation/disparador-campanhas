@@ -25,6 +25,11 @@ import messageTemplatesRoutes from './routes/messageTemplates';
 import reportsRoutes from './routes/reports';
 import automationRoutes from './routes/automation';
 import chatwootRoutes from './routes/chatwootRoutes';
+import connectionRoutes from './routes/connectionRoutes';
+import webhookRoutes from './routes/webhookRoutes';
+import incomingWebhookRoutes from './routes/incomingWebhookRoutes';
+import interactiveCampaignRoutes from './routes/interactiveCampaignRoutes';
+import httpProxyRoutes from './routes/httpProxyRoutes';
 // import integrationsRoutes from './routes/integrations';
 // import cacheRoutes from './routes/cache';
 import { authMiddleware } from './middleware/auth';
@@ -123,6 +128,10 @@ app.get('/api/health', (req, res) => {
 // Servir uploads estaticamente (público)
 app.use('/api/uploads', express.static('/app/uploads'));
 
+// Rotas públicas de webhooks (recebem de provedores externos)
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/webhooks', incomingWebhookRoutes);
+
 // Rotas protegidas (requerem autenticação)
 app.use('/api/contatos', authMiddleware, contactRoutes);
 app.use('/api/categorias', authMiddleware, categoryRoutes);
@@ -143,6 +152,9 @@ app.use('/api/chatwoot', authMiddleware, chatwootRoutes); // Chatwoot integratio
 // app.use('/api/integrations', integrationsRoutes); // External API integrations system
 // app.use('/api/cache', cacheRoutes); // Cache management and monitoring
 app.use('/api/media', authMiddleware, mediaRoutes); // Upload de arquivos de mídia
+app.use('/api/connections', authMiddleware, connectionRoutes); // Interactive campaigns - Connections
+app.use('/api/interactive-campaigns', authMiddleware, interactiveCampaignRoutes); // Interactive campaigns
+app.use('/api/http-proxy', authMiddleware, httpProxyRoutes); // HTTP REST proxy to avoid CORS
 app.use('/api', authMiddleware, mockRoutes);
 
 // Catch-all para SPA

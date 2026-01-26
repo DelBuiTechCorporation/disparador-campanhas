@@ -10,6 +10,12 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 const fetch = require('node-fetch');
+const crypto = require('crypto');
+
+// Função para gerar webhook secret para campanhas interativas
+function generateWebhookSecret(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 const wahaRequest = async (endpoint: string, options: any = {}) => {
   // Buscar configurações dinâmicas do banco usando o método específico
@@ -62,35 +68,29 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
     // Sempre usar o tenantId do token (mesmo para SUPERADMIN quando tem empresa selecionada)
     const tenantId = req.tenantId;
 
-    // Parâmetros de filtro, ordenação e paginação
-    const {
-      search = '',
-      status = '',
-      sortBy = 'atualizadoEm',
-      sortOrder = 'desc',
-      page = '1',
-      limit = '50'
-    } = req.query;
-
-    // Sempre sincronizar sessões WAHA para pegar status atualizado (WORKING, SCAN_QR_CODE, etc)
+    // Sincronizar apenas sessões WAHA que já existem no banco DESTE tenant
+    // NÃO buscar sessões externas - sistema SaaS multi-tenant
     try {
-      await WahaSyncService.syncAllSessions();
+      const wahaSessions = await WhatsAppSessionService.getAllSessions(tenantId);
+      const wahaSessionsFiltered = wahaSessions.filter(s => s.provider === 'WAHA');
+
+      if (wahaSessionsFiltered.length > 0) {
+        console.log(`🔄 Atualizando status de ${wahaSessionsFiltered.length} sessões WAHA do tenant...`);
+        for (const session of wahaSessionsFiltered) {
+          try {
+            await WahaSyncService.syncSession(session.name);
+          } catch (err) {
+            console.warn(`⚠️ Erro ao sincronizar sessão WAHA ${session.name}:`, err);
+          }
+        }
+      }
     } catch (wahaError) {
       console.warn('⚠️ Erro ao sincronizar WAHA, mas continuando com dados do banco:', wahaError);
     }
 
-    // Retornar todas as sessões atualizadas do banco com filtros
-    const result = await WhatsAppSessionService.getAllSessions({
-      tenantId,
-      search: String(search),
-      status: String(status),
-      sortBy: String(sortBy),
-      sortOrder: String(sortOrder) as 'asc' | 'desc',
-      page: Number(page),
-      limit: Number(limit)
-    });
-
-    res.json(result);
+    // Retornar todas as sessões atualizadas do banco
+    const updatedSessions = await WhatsAppSessionService.getAllSessions(tenantId);
+    res.json(updatedSessions);
   } catch (error) {
     console.error('Erro ao listar sessões:', error);
     res.status(500).json({ error: 'Erro ao listar sessões WhatsApp' });
@@ -127,8 +127,8 @@ router.get('/sessions/:sessionName', authMiddleware, async (req: AuthenticatedRe
 // Criar nova sessão
 router.post('/sessions', authMiddleware, checkConnectionQuota, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name, provider = 'WAHA' } = req.body;
-    console.log('➕ POST /sessions - name:', name, 'provider:', provider, 'user:', req.user?.email, 'tenantId:', req.tenantId);
+    const { name, provider = 'WAHA', interactiveCampaignEnabled = false } = req.body;
+    console.log('➕ POST /sessions - name:', name, 'provider:', provider, 'interactiveCampaign:', interactiveCampaignEnabled, 'user:', req.user?.email, 'tenantId:', req.tenantId);
 
     if (!name) {
       return res.status(400).json({ error: 'Nome da sessão é obrigatório' });
@@ -163,16 +163,46 @@ router.post('/sessions', authMiddleware, checkConnectionQuota, async (req: Authe
       return res.status(409).json({ error: 'Já existe uma conexão com este nome' });
     }
 
-    // WAHA 
-    const result = await WahaSyncService.createSession(realName);
+    let result;
+    let webhookSecret: string | undefined;
+    let webhookUrl: string | undefined;
 
-    // Salvar com tenantId e displayName
+    // Se campanha interativa habilitada, gerar webhook secret e URL
+    if (interactiveCampaignEnabled) {
+      webhookSecret = generateWebhookSecret();
+      console.log(`🔑 Webhook secret gerado para sessão ${realName}: ${webhookSecret.substring(0, 16)}...`);
+    }
+
+    // Criar sessão WAHA
+    const tempSession = await prisma.whatsAppSession.create({
+      data: {
+        name: realName,
+        displayName,
+        status: 'SCAN_QR_CODE',
+        provider: 'WAHA',
+        tenantId,
+        interactiveCampaignEnabled,
+        webhookSecret
+      }
+    });
+
+    if (interactiveCampaignEnabled && webhookSecret) {
+      const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+      webhookUrl = `${baseUrl}/api/webhooks/incoming/${tempSession.id}/${webhookSecret}`;
+      console.log(`🔗 Webhook URL para WAHA: ${webhookUrl}`);
+    }
+
+    result = await WahaSyncService.createSession(realName, webhookUrl);
+
+    // Atualizar sessão
     await WhatsAppSessionService.createOrUpdateSession({
       name: realName,
       displayName,
       status: 'SCAN_QR_CODE',
       provider: 'WAHA',
-      tenantId
+      tenantId,
+      interactiveCampaignEnabled,
+      webhookSecret
     });
 
     console.log('✅ Sessão criada:', realName, '(display:', displayName, ') tenant:', tenantId);
@@ -193,20 +223,17 @@ router.post('/sessions/:sessionName/start', authMiddleware, async (req: Authenti
     // SUPERADMIN pode iniciar qualquer sessão, outros usuários só do seu tenant
     const tenantId = req.user?.role === 'SUPERADMIN' ? undefined : req.tenantId;
 
-    // Verificar o provedor da sessão
-    let sessionProvider = 'WAHA'; // Default para WAHA (compatibilidade)
-    let sessionData: any;
+    // Verificar se a sessão existe e pertence ao tenant
     try {
-      sessionData = await WhatsAppSessionService.getSession(sessionName, tenantId);
-      sessionProvider = sessionData.provider || 'WAHA';
+      await WhatsAppSessionService.getSession(sessionName, tenantId);
     } catch (error) {
       console.error('❌ Sessão não encontrada ou não pertence ao tenant:', error);
       return res.status(404).json({ error: 'Sessão não encontrada' });
     }
 
-    console.log(`▶️ Iniciando sessão ${sessionName} via ${sessionProvider}`);
+    console.log(`▶️ Iniciando sessão ${sessionName} via WAHA`);
 
-    // Usar WAHA
+    // Usar WAHA com chamada direta
     const result = await wahaRequest(`/api/sessions/${sessionName}/start`, {
       method: 'POST'
     });
@@ -227,20 +254,16 @@ router.post('/sessions/:sessionName/stop', authMiddleware, async (req: Authentic
     // SUPERADMIN pode parar qualquer sessão, outros usuários só do seu tenant
     const tenantId = req.user?.role === 'SUPERADMIN' ? undefined : req.tenantId;
 
-    // Verificar o provedor da sessão
-    let sessionProvider = 'WAHA';
-    let sessionData: any;
+    // Verificar se a sessão existe e pertence ao tenant
     try {
-      sessionData = await WhatsAppSessionService.getSession(sessionName, tenantId);
-      sessionProvider = sessionData.provider || 'WAHA';
+      await WhatsAppSessionService.getSession(sessionName, tenantId);
     } catch (error) {
       console.error('❌ Sessão não encontrada ou não pertence ao tenant:', error);
       return res.status(404).json({ error: 'Sessão não encontrada' });
     }
 
-    console.log(`⏹️ Parando sessão ${sessionName} via ${sessionProvider}`);
+    console.log(`⏹️ Parando sessão ${sessionName} via WAHA`);
 
-    // Usar WAHA
     const result = await WahaSyncService.stopSession(sessionName);
 
     res.json(result);
@@ -251,22 +274,24 @@ router.post('/sessions/:sessionName/stop', authMiddleware, async (req: Authentic
 });
 
 // Reiniciar sessão
-router.post('/sessions/:sessionName/restart', async (req, res) => {
+router.post('/sessions/:sessionName/restart', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { sessionName } = req.params;
+    console.log('🔄 POST /sessions/:sessionName/restart - sessionName:', sessionName, 'user:', req.user?.email, 'tenantId:', req.tenantId);
 
-    // Verificar o provedor da sessão
-    let sessionProvider = 'WAHA';
+    // SUPERADMIN pode reiniciar qualquer sessão, outros usuários só do seu tenant
+    const tenantId = req.user?.role === 'SUPERADMIN' ? undefined : req.tenantId;
+
+    // Verificar se a sessão existe e pertence ao tenant
     try {
-      const savedSession = await WhatsAppSessionService.getSession(sessionName);
-      sessionProvider = (savedSession as any).provider || 'WAHA';
+      await WhatsAppSessionService.getSession(sessionName, tenantId);
     } catch (error) {
-      // Se sessão não existe no banco, assumir WAHA
+      console.error('❌ Sessão não encontrada ou não pertence ao tenant:', error);
+      return res.status(404).json({ error: 'Sessão não encontrada' });
     }
 
-    console.log(`🔄 Reiniciando sessão ${sessionName} via ${sessionProvider}`);
+    console.log(`🔄 Reiniciando sessão ${sessionName} via WAHA`);
 
-    // Usar WAHA
     const result = await WahaSyncService.restartSession(sessionName);
 
     res.json(result);
@@ -285,17 +310,15 @@ router.delete('/sessions/:sessionName', authMiddleware, async (req: Authenticate
     // SUPERADMIN pode deletar qualquer sessão, outros usuários só do seu tenant
     const tenantId = req.user?.role === 'SUPERADMIN' ? undefined : req.tenantId;
 
-    // Verificar o provedor da sessão
-    let sessionProvider = 'WAHA';
+    // Verificar se a sessão existe e pertence ao tenant
     try {
-      const savedSession = await WhatsAppSessionService.getSession(sessionName, tenantId);
-      sessionProvider = savedSession.provider || 'WAHA';
+      await WhatsAppSessionService.getSession(sessionName, tenantId);
     } catch (error) {
       console.error('❌ Sessão não encontrada ou não pertence ao tenant:', error);
       return res.status(404).json({ error: 'Sessão não encontrada' });
     }
 
-    console.log(`🗑️ Deletando sessão ${sessionName} via ${sessionProvider}`);
+    console.log(`🗑️ Deletando sessão ${sessionName} via WAHA`);
 
     // Deletar via WAHA (já remove do banco também)
     await WahaSyncService.deleteSession(sessionName);
@@ -334,8 +357,7 @@ router.get('/sessions/:sessionName/auth/qr', authMiddleware, async (req: Authent
       return res.status(404).json({ error: 'Sessão não encontrada' });
     }
 
-    // Verificar o provedor da sessão para rotear corretamente
-    let sessionProvider = 'WAHA'; // Default para WAHA (compatibilidade)
+    // Buscar dados da sessão
     let sessionData: any;
     try {
       sessionData = await WhatsAppSessionService.getSession(sessionName, tenantId);
@@ -343,15 +365,14 @@ router.get('/sessions/:sessionName/auth/qr', authMiddleware, async (req: Authent
         provider: sessionData.provider,
         status: sessionData.status
       });
-      sessionProvider = sessionData.provider || 'WAHA';
     } catch (error) {
-      console.log(`⚠️ Sessão ${sessionName} não encontrada no banco ou não pertence ao tenant, assumindo WAHA`);
+      console.log(`⚠️ Sessão ${sessionName} não encontrada no banco ou não pertence ao tenant`);
       return res.status(404).json({ error: 'Sessão não encontrada' });
     }
 
-    console.log(`🔍 Processando QR para sessão ${sessionName} via ${sessionProvider}`);
+    console.log(`🔍 Processando QR para sessão ${sessionName} via WAHA`);
 
-    // Para WAHA
+    // Lógica WAHA para obter QR code
     let sessionStatus;
     try {
       sessionStatus = await wahaRequest(`/api/sessions/${sessionName}`);
@@ -467,6 +488,7 @@ router.get('/sessions/:sessionName/auth/qr', authMiddleware, async (req: Authent
         status: effectiveStatus
       });
     }
+
   } catch (error) {
     console.error('Erro ao obter QR Code da WAHA:', error);
     res.status(500).json({ error: 'Erro ao obter QR Code' });
@@ -547,7 +569,7 @@ router.patch('/sessions/:sessionName/assign-tenant', authMiddleware, async (req:
     await WhatsAppSessionService.createOrUpdateSession({
       name: sessionName,
       status: session.status as any,
-      provider: session.provider as 'WAHA',
+      provider: 'WAHA',
       me: session.me ? {
         id: session.me.id,
         pushName: session.me.pushName,

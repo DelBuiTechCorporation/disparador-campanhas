@@ -134,7 +134,7 @@ export function TenantSelector() {
 
         {isOpen && (
           <>
-            <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
+            <div className="fixed inset-0 z-10 bg-black/5" onClick={() => setIsOpen(false)} />
             <div className="absolute right-0 mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
               <div className="py-1">
                 <div className="px-3 py-2 text-xs font-medium text-blue-600 uppercase tracking-wider border-b border-gray-100">
@@ -203,7 +203,7 @@ export function TenantSelector() {
         <>
           {/* Overlay */}
           <div
-            className="fixed inset-0 z-10"
+            className="fixed inset-0 z-10 bg-black/5"
             onClick={() => setIsOpen(false)}
           />
 

@@ -148,7 +148,7 @@ export const updateSettings = async (req: AuthenticatedRequest, res: Response) =
 
     const { wahaHost, wahaApiKey, companyName, pageTitle, openaiApiKey, groqApiKey, chatwootUrl, chatwootAccountId, chatwootApiToken, tenantId } = req.body;
 
-    // Atualizar configurações globais (WAHA)
+    // Atualizar configurações globais (WAHA é global)
     const globalSettings = await settingsService.updateSettings({
       wahaHost,
       wahaApiKey,

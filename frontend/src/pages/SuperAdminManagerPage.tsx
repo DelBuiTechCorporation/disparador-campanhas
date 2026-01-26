@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'react-hot-toast';
+import { SystemBackup } from '../components/SystemBackup';
 import { AnalyticsDashboard } from '../components/AnalyticsDashboard';
 import { useSettings } from '../hooks/useSettings';
 
@@ -97,6 +98,32 @@ interface SystemStats {
   };
 }
 
+interface BackupInfo {
+  tenantId: string;
+  tenantSlug: string;
+  size: number;
+  createdAt: string;
+  status: 'success' | 'failed' | 'in_progress';
+  error?: string;
+}
+
+interface BackupStats {
+  totalTenants: number;
+  totalBackups: number;
+  totalSize: number;
+  scheduledJobs: number;
+  tenantStats: {
+    tenantId: string;
+    tenantSlug: string;
+    tenantName: string;
+    backupCount: number;
+    totalSize: number;
+    lastBackup: string | null;
+    isScheduled: boolean;
+  }[];
+}
+
+
 interface Settings {
   id: string;
   wahaHost: string;
@@ -133,11 +160,13 @@ type GeneralSettingsFormData = z.infer<typeof generalSettingsSchema>;
 
 
 export function SuperAdminManagerPage() {
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'integrations' | 'tenants' | 'users'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'integrations' | 'tenants' | 'users' | 'backup'>('general');
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
+  const [backupStats, setBackupStats] = useState<BackupStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [backupLoading, setBackupLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -527,6 +556,14 @@ export function SuperAdminManagerPage() {
         if (response.ok) {
           const data = await response.json();
           setUsers(data.data?.users || []);
+        }
+      } else if (activeTab === 'backup') {
+        const response = await fetch('/api/backup/stats', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setBackupStats(data.stats || null);
         }
       }
     } catch (error) {
@@ -1011,6 +1048,16 @@ export function SuperAdminManagerPage() {
           >
             👥 Usuários
           </button>
+          <button
+            onClick={() => setActiveTab('backup')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'backup'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            💾 Backup
+          </button>
         </nav>
       </div>
 
@@ -1241,7 +1288,7 @@ export function SuperAdminManagerPage() {
       {/* Modal for Create/Edit Tenant */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">
                 {editingTenant ? 'Editar Empresa' : 'Criar Nova Empresa'}
@@ -1249,162 +1296,184 @@ export function SuperAdminManagerPage() {
             </div>
 
             <form onSubmit={handleSubmitTenant} className="p-6">
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                    Nome da Empresa *
-                  </label>
-                  <input
-                    type="text"
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Nome da empresa"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-1">O identificador único será gerado automaticamente</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Coluna Esquerda - Dados da Empresa e Admin */}
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      </svg>
+                      Dados da Empresa
+                    </h4>
+                    <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                      Nome da Empresa *
+                    </label>
+                    <input
+                      type="text"
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Nome da empresa"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">O identificador único será gerado automaticamente</p>
+                  </div>
+
+                  {!editingTenant && (
+                    <div className="border-t border-gray-200 pt-4">
+                      <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
+                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        Usuário Administrador
+                      </h4>
+
+                      <div className="space-y-3">
+                        <div>
+                          <label htmlFor="adminNome" className="block text-sm font-medium text-gray-700 mb-1">
+                            Nome do Admin *
+                          </label>
+                          <input
+                            type="text"
+                            id="adminNome"
+                            value={formData.adminUser.nome}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              adminUser: { ...formData.adminUser, nome: e.target.value }
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Nome completo"
+                            required={!editingTenant}
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="adminEmail" className="block text-sm font-medium text-gray-700 mb-1">
+                            E-mail do Admin *
+                          </label>
+                          <input
+                            type="email"
+                            id="adminEmail"
+                            value={formData.adminUser.email}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              adminUser: { ...formData.adminUser, email: e.target.value }
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="admin@exemplo.com"
+                            required={!editingTenant}
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="adminSenha" className="block text-sm font-medium text-gray-700 mb-1">
+                            Senha do Admin *
+                          </label>
+                          <input
+                            type="password"
+                            id="adminSenha"
+                            value={formData.adminUser.senha}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              adminUser: { ...formData.adminUser, senha: e.target.value }
+                            })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Senha segura"
+                            required={!editingTenant}
+                            minLength={6}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="border-t border-gray-200 pt-4">
-                  <h4 className="text-md font-medium text-gray-900 mb-3">Limites e Quotas</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="maxUsers" className="block text-sm font-medium text-gray-700 mb-1">
-                        Máximo de Usuários *
-                      </label>
-                      <input
-                        type="number"
-                        id="maxUsers"
-                        min="1"
-                        value={formData.quotas.maxUsers}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          quotas: { ...formData.quotas, maxUsers: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="maxConnections" className="block text-sm font-medium text-gray-700 mb-1">
-                        Máximo de Conexões *
-                      </label>
-                      <input
-                        type="number"
-                        id="maxConnections"
-                        min="1"
-                        value={formData.quotas.maxConnections}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          quotas: { ...formData.quotas, maxConnections: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="maxContacts" className="block text-sm font-medium text-gray-700 mb-1">
-                        Máximo de Contatos *
-                      </label>
-                      <input
-                        type="number"
-                        id="maxContacts"
-                        min="1"
-                        value={formData.quotas.maxContacts}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          quotas: { ...formData.quotas, maxContacts: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="maxCampaigns" className="block text-sm font-medium text-gray-700 mb-1">
-                        Máximo de Campanhas *
-                      </label>
-                      <input
-                        type="number"
-                        id="maxCampaigns"
-                        min="1"
-                        value={formData.quotas.maxCampaigns}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          quotas: { ...formData.quotas, maxCampaigns: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        required
-                      />
+                {/* Coluna Direita - Limites e Provedores */}
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
+                      <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                      Limites e Quotas
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="maxUsers" className="block text-sm font-medium text-gray-700 mb-1">
+                          Máx. Usuários *
+                        </label>
+                        <input
+                          type="number"
+                          id="maxUsers"
+                          min="1"
+                          value={formData.quotas.maxUsers}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            quotas: { ...formData.quotas, maxUsers: e.target.value }
+                          })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="maxConnections" className="block text-sm font-medium text-gray-700 mb-1">
+                          Máx. Conexões *
+                        </label>
+                        <input
+                          type="number"
+                          id="maxConnections"
+                          min="1"
+                          value={formData.quotas.maxConnections}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            quotas: { ...formData.quotas, maxConnections: e.target.value }
+                          })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="maxContacts" className="block text-sm font-medium text-gray-700 mb-1">
+                          Máx. Contatos *
+                        </label>
+                        <input
+                          type="number"
+                          id="maxContacts"
+                          min="1"
+                          value={formData.quotas.maxContacts}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            quotas: { ...formData.quotas, maxContacts: e.target.value }
+                          })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="maxCampaigns" className="block text-sm font-medium text-gray-700 mb-1">
+                          Máx. Campanhas *
+                        </label>
+                        <input
+                          type="number"
+                          id="maxCampaigns"
+                          min="1"
+                          value={formData.quotas.maxCampaigns}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            quotas: { ...formData.quotas, maxCampaigns: e.target.value }
+                          })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          required
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-
-                {!editingTenant && (
-                  <>
-                    <div className="border-t border-gray-200 pt-4">
-                      <h4 className="text-md font-medium text-gray-900 mb-3">Usuário Administrador</h4>
-                    </div>
-
-                    <div>
-                      <label htmlFor="adminNome" className="block text-sm font-medium text-gray-700 mb-1">
-                        Nome do Admin *
-                      </label>
-                      <input
-                        type="text"
-                        id="adminNome"
-                        value={formData.adminUser.nome}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          adminUser: { ...formData.adminUser, nome: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Nome completo"
-                        required={!editingTenant}
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="adminEmail" className="block text-sm font-medium text-gray-700 mb-1">
-                        E-mail do Admin *
-                      </label>
-                      <input
-                        type="email"
-                        id="adminEmail"
-                        value={formData.adminUser.email}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          adminUser: { ...formData.adminUser, email: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="admin@exemplo.com"
-                        required={!editingTenant}
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="adminSenha" className="block text-sm font-medium text-gray-700 mb-1">
-                        Senha do Admin *
-                      </label>
-                      <input
-                        type="password"
-                        id="adminSenha"
-                        value={formData.adminUser.senha}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          adminUser: { ...formData.adminUser, senha: e.target.value }
-                        })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Senha segura"
-                        required={!editingTenant}
-                        minLength={6}
-                      />
-                    </div>
-                  </>
-                )}
               </div>
 
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
@@ -1720,6 +1789,12 @@ export function SuperAdminManagerPage() {
           </div>
         </div>
       )}
+
+      {/* Backup Tab */}
+      {activeTab === 'backup' && (
+        <SystemBackup />
+      )}
+
 
       {/* General Settings Tab */}
       {activeTab === 'general' && (

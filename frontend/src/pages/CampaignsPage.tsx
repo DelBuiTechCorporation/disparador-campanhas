@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Header } from '../components/Header';
-import { BusinessHoursModal } from '../components/BusinessHoursModal';
-import { EditCampaignMessagesModal } from '../components/EditCampaignMessagesModal';
-import { websocketService } from '../services/websocket';
+import { Portal } from '../components/Portal';
 
 type MessageContent =
   | { text: string }
@@ -20,7 +18,6 @@ interface Campaign {
   messageType: string;
   messageContent: MessageContent;
   randomDelay: number;
-  minRandomDelay?: number;
   startImmediately: boolean;
   scheduledFor: string | null;
   status: string;
@@ -55,146 +52,41 @@ interface ContactTag {
   nome: string;
 }
 
-interface CampaignFormData {
-  nome: string;
-  targetTags: string[];
-  sessionNames: string[];
-  sessionName: string;
-  messageType: string;
-  messageContent: MessageContent;
-  randomDelay: number;
-  minRandomDelay: number;
-  startImmediately: boolean;
-  scheduledFor: string;
-  businessHours?: any;
-  startPaused?: boolean;
-}
-
 export function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [showEditMessagesModal, setShowEditMessagesModal] = useState(false);
-  const [selectedCampaignForEdit, setSelectedCampaignForEdit] = useState<string | null>(null);
   const [reportData, setReportData] = useState<any>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [currentReportCampaignId, setCurrentReportCampaignId] = useState<string | null>(null);
   const [reportCurrentPage, setReportCurrentPage] = useState(1);
   const [reportItemsPerPage] = useState(8);
   const [campaignsCurrentPage, setCampaignsCurrentPage] = useState(1);
-  const [campaignsPerPage, setCampaignsPerPage] = useState(25);
-  const [campaignsTotal, setCampaignsTotal] = useState(0);
+  const [campaignsPerPage] = useState(10);
   const [contactTags, setContactTags] = useState<ContactTag[]>([]);
   const [whatsappSessions, setWhatsappSessions] = useState<WhatsAppSession[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<{ [key: number]: boolean }>({});
   const [fileInfos, setFileInfos] = useState<{ [key: number]: { name: string, size: number, type: string } }>({});
-  
-  // Filtros e ordenação
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [sortBy, setSortBy] = useState('criadoEm');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  
-  // Business Hours Modal states
-  const [showBusinessHoursModal, setShowBusinessHoursModal] = useState(false);
-  const [selectedCampaignForBusinessHours, setSelectedCampaignForBusinessHours] = useState<{id: string, name: string} | null>(null);
-
-  // Next shot countdown - map campaignId to seconds remaining
-  const [nextShotCountdown, setNextShotCountdown] = useState<{ [key: string]: number }>({});
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   // Form states
-  const [formData, setFormData] = useState<CampaignFormData>({
+  const [formData, setFormData] = useState({
     nome: '',
     targetTags: [] as string[],
     sessionNames: [] as string[],
     sessionName: '',
     messageType: 'sequence',
     messageContent: { sequence: [] as Array<{ type: string; content: any }> } as MessageContent,
-    randomDelay: 60,
-    minRandomDelay: 30,
+    randomDelay: 30,
     startImmediately: true,
-    scheduledFor: '',
-    // Business hours config set during creation
-    businessHours: {} as any,
-    // If true, campaign will be created in PAUSED state
-    startPaused: false
+    scheduledFor: ''
   });
 
   useEffect(() => {
     loadCampaigns();
     loadContactTags();
     loadWhatsAppSessions();
-  }, []);
-
-  // Recarregar campanhas quando filtros/ordenação/paginação mudarem
-  useEffect(() => {
-    loadCampaigns();
-  }, [campaignsCurrentPage, campaignsPerPage, searchTerm, statusFilter, sortBy, sortOrder]);
-
-  // Update countdown every second for running campaigns
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setNextShotCountdown(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(campaignId => {
-          if (updated[campaignId] > 0) {
-            updated[campaignId] -= 1;
-          }
-        });
-        return updated;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // NÃO inicializar countdown automaticamente - apenas via WebSocket
-  // O countdown só aparece quando receber nextShotIn do backend
-
-  // Listen to WebSocket for real-time campaign updates
-  useEffect(() => {
-    console.log('🔌 Conectando ao WebSocket e registrando listener de campaign_progress...');
-    websocketService.connect();
-
-    const handleCampaignProgress = (data: any) => {
-      console.log('📊 Campaign progress received:', data);
-      
-      // Update campaign stats
-      if (data.campaignId) {
-        setCampaigns(prev => prev.map(c => 
-          c.id === data.campaignId 
-            ? { ...c, sentCount: data.sentCount, failedCount: data.failedCount }
-            : c
-        ));
-
-        // Update countdown if nextShotAt is provided (timestamp)
-        if (data.nextShotAt !== undefined) {
-          const remainingSec = Math.max(0, Math.floor((data.nextShotAt - Date.now()) / 1000));
-          console.log(`⏱️ Atualizando countdown para campanha ${data.campaignId}: ${remainingSec}s (timestamp: ${data.nextShotAt})`);
-          setNextShotCountdown(prev => ({
-            ...prev,
-            [data.campaignId]: remainingSec
-          }));
-          
-          // Debug toast
-          toast(`⏱️ Próximo: ${remainingSec}s`, {
-            icon: '⏱️',
-            duration: 2000
-          });
-        } else {
-          console.log(`⚠️ nextShotAt não fornecido no evento campaign_progress`);
-        }
-      }
-    };
-
-    console.log('📡 Registrando listener para campaign_progress');
-    websocketService.on('campaign_progress', handleCampaignProgress);
-
-    return () => {
-      console.log('🔌 Removendo listener de campaign_progress');
-      websocketService.off('campaign_progress', handleCampaignProgress);
-    };
   }, []);
 
   // Helper para fazer requisições autenticadas
@@ -218,28 +110,12 @@ export function CampaignsPage() {
   const loadCampaigns = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        page: campaignsCurrentPage.toString(),
-        limit: campaignsPerPage.toString(),
-        sortBy,
-        sortOrder
-      });
-      
-      if (searchTerm) {
-        params.append('search', searchTerm);
-      }
-      
-      if (statusFilter) {
-        params.append('status', statusFilter);
-      }
-      
-      const response = await authenticatedFetch(`/api/campaigns?${params.toString()}`);
+      const response = await authenticatedFetch('/api/campaigns');
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
       const data = await response.json();
       setCampaigns(data.campaigns || []);
-      setCampaignsTotal(data.total || 0);
     } catch (error) {
       console.error('Erro ao carregar campanhas:', error);
       toast.error('Erro ao carregar campanhas');
@@ -292,6 +168,24 @@ export function CampaignsPage() {
     }));
   };
 
+  const handleSelectAllTags = () => {
+    setFormData(prev => ({
+      ...prev,
+      targetTags: prev.targetTags.length === contactTags.length
+        ? []
+        : contactTags.map(tag => tag.id)
+    }));
+  };
+
+  const handleSelectAllSessions = () => {
+    setFormData(prev => ({
+      ...prev,
+      sessionNames: prev.sessionNames.length === whatsappSessions.length
+        ? []
+        : whatsappSessions.map(session => session.name)
+    }));
+  };
+
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -302,11 +196,6 @@ export function CampaignsPage() {
 
     if (formData.sessionNames.length === 0) {
       toast.error('Selecione pelo menos uma conexão WhatsApp');
-      return;
-    }
-
-    if (formData.minRandomDelay > formData.randomDelay) {
-      toast.error('O delay mínimo não pode ser maior que o máximo');
       return;
     }
 
@@ -331,16 +220,24 @@ export function CampaignsPage() {
         finalMessageContent = singleMessage.content;
       }
 
+      // Converter scheduledFor de datetime-local para ISO string
+      let scheduledForISO = null;
+      if (!formData.startImmediately && formData.scheduledFor) {
+        // datetime-local retorna formato "YYYY-MM-DDTHH:mm" SEM timezone
+        // Precisamos interpretar como horário LOCAL do usuário e converter para UTC
+        // Exemplo: usuário escolhe 2025-10-15T19:00 em UTC-3 (Brasília)
+        // Isso deve ser salvo como 2025-10-15T22:00:00.000Z (19:00 - 3 = 22:00 UTC)
+        const localDateStr = formData.scheduledFor; // "2025-10-15T19:00"
+        const localDate = new Date(localDateStr); // JavaScript interpreta como LOCAL
+        scheduledForISO = localDate.toISOString(); // Converte para UTC com timezone
+      }
+
       const campaignData = {
         ...formData,
         messageType: finalMessageType,
         messageContent: finalMessageContent,
-        scheduledFor: formData.startImmediately ? null : formData.scheduledFor || null
+        scheduledFor: scheduledForISO
       };
-
-      // Ensure businessHours and startPaused are explicitly included
-      (campaignData as any).businessHours = (formData as any).businessHours || {};
-      (campaignData as any).startPaused = (formData as any).startPaused || false;
 
       const response = await authenticatedFetch('/api/campaigns', {
         method: 'POST',
@@ -377,13 +274,45 @@ export function CampaignsPage() {
       sessionName: '',
       messageType: 'sequence',
       messageContent: { sequence: [] },
-      randomDelay: 60,
-      minRandomDelay: 30,
+      randomDelay: 30,
       startImmediately: true,
       scheduledFor: ''
     });
     setUploadingFiles({});
     setFileInfos({});
+    setDraggedIndex(null);
+  };
+
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      return;
+    }
+
+    const currentSequence = ('sequence' in formData.messageContent) ? formData.messageContent.sequence : [];
+    const newSequence = [...currentSequence];
+    const [draggedItem] = newSequence.splice(draggedIndex, 1);
+    newSequence.splice(dropIndex, 0, draggedItem);
+
+    setFormData(prev => ({
+      ...prev,
+      messageContent: { sequence: newSequence }
+    }));
+    setDraggedIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
   };
 
   const handleFileUpload = async (file: File, messageIndex: number, variationIndex?: number) => {
@@ -525,23 +454,6 @@ export function CampaignsPage() {
     return '📄';
   };
 
-  const handleOpenBusinessHours = (campaignId: string, campaignName: string) => {
-    // During creation, open modal in 'creation' mode: we store config in formData.businessHours
-    if (showCreateModal) {
-      setShowBusinessHoursModal(true);
-      setSelectedCampaignForBusinessHours(null);
-      return;
-    }
-
-    setSelectedCampaignForBusinessHours({ id: campaignId, name: campaignName });
-    setShowBusinessHoursModal(true);
-  };
-
-  const handleCloseBusinessHours = () => {
-    setShowBusinessHoursModal(false);
-    setSelectedCampaignForBusinessHours(null);
-  };
-
   const handleToggleCampaign = async (campaignId: string, action: 'pause' | 'resume') => {
     try {
       const response = await authenticatedFetch(`/api/campaigns/${campaignId}/toggle`, {
@@ -677,7 +589,7 @@ export function CampaignsPage() {
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = `relatorio-campanha-${reportData.campaign.nome}.csv`;
+        a.download = `relatorio-campanha-${reportData.campaign.nome}.xlsx`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -783,7 +695,7 @@ export function CampaignsPage() {
     <>
       <Header
         title="Campanhas"
-        subtitle={`${campaignsTotal} campanhas encontradas`}
+        subtitle={`${campaigns.length} campanhas ativas`}
         actions={
           <button
             onClick={() => setShowCreateModal(true)}
@@ -795,116 +707,6 @@ export function CampaignsPage() {
       />
 
       <div className="p-6 space-y-6">
-        {/* Filtros e Ordenação */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <div className="flex flex-wrap gap-4 items-end">
-            {/* Busca por nome */}
-            <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
-              <input
-                type="text"
-                placeholder="Nome da campanha..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCampaignsCurrentPage(1);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-
-            {/* Filtro por status */}
-            <div className="w-[160px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setCampaignsCurrentPage(1);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="">Todos</option>
-                <option value="PENDING">Aguardando</option>
-                <option value="RUNNING">Executando</option>
-                <option value="PAUSED">Pausada</option>
-                <option value="COMPLETED">Concluída</option>
-                <option value="FAILED">Falha</option>
-              </select>
-            </div>
-
-            {/* Ordenar por */}
-            <div className="w-[160px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Ordenar por</label>
-              <select
-                value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value);
-                  setCampaignsCurrentPage(1);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="criadoEm">Data de criação</option>
-                <option value="nome">Nome</option>
-                <option value="status">Status</option>
-                <option value="totalContacts">Total de contatos</option>
-                <option value="sentCount">Enviados</option>
-                <option value="startedAt">Data de início</option>
-              </select>
-            </div>
-
-            {/* Direção da ordenação */}
-            <div className="w-[120px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Ordem</label>
-              <select
-                value={sortOrder}
-                onChange={(e) => {
-                  setSortOrder(e.target.value as 'asc' | 'desc');
-                  setCampaignsCurrentPage(1);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="desc">Decrescente</option>
-                <option value="asc">Crescente</option>
-              </select>
-            </div>
-
-            {/* Itens por página */}
-            <div className="w-[100px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Por página</label>
-              <select
-                value={campaignsPerPage}
-                onChange={(e) => {
-                  setCampaignsPerPage(Number(e.target.value));
-                  setCampaignsCurrentPage(1);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
-
-            {/* Botão limpar filtros */}
-            {(searchTerm || statusFilter || sortBy !== 'criadoEm' || sortOrder !== 'desc') && (
-              <button
-                onClick={() => {
-                  setSearchTerm('');
-                  setStatusFilter('');
-                  setSortBy('criadoEm');
-                  setSortOrder('desc');
-                  setCampaignsCurrentPage(1);
-                }}
-                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md"
-              >
-                Limpar filtros
-              </button>
-            )}
-          </div>
-        </div>
-
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="px-6 py-4 border-b border-gray-200">
             <h3 className="text-lg font-medium text-gray-900">Campanhas Criadas</h3>
@@ -938,18 +740,6 @@ export function CampaignsPage() {
                         <span>{campaign.sentCount}/{campaign.totalContacts}</span>
                       </div>
 
-                      {/* Próximo disparo para campanhas em execução */}
-                      {campaign.status === 'RUNNING' && nextShotCountdown[campaign.id] !== undefined && (
-                        <div className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded">
-                          <svg className="w-3 h-3 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                          </svg>
-                          <span className="text-xs font-medium text-green-700">
-                            Próximo: {nextShotCountdown[campaign.id]}s
-                          </span>
-                        </div>
-                      )}
-
                       {/* Sessões ativas (apenas ícones) */}
                       {campaign.sessionNames && campaign.sessionNames.length > 0 && (
                         <div className="flex items-center gap-1">
@@ -979,29 +769,6 @@ export function CampaignsPage() {
                           <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
                         </svg>
                       </button>
-                      <button
-                        onClick={() => handleOpenBusinessHours(campaign.id, campaign.nome)}
-                        className="px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700"
-                        title="Configurar horários comerciais"
-                      >
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                      {['RUNNING', 'PAUSED', 'PENDING'].includes(campaign.status) && (
-                        <button
-                          onClick={() => {
-                            setSelectedCampaignForEdit(campaign.id);
-                            setShowEditMessagesModal(true);
-                          }}
-                          className="px-2 py-1 bg-cyan-600 text-white text-xs rounded hover:bg-cyan-700"
-                          title="Editar mensagens pendentes"
-                        >
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M11.3 1.046A1 1 0 0112 2v5h6a1 1 0 01.82 1.573l-7 10.666A1 1 0 018 18.479V12H2a1 1 0 01-.82-1.573l7-10.666a1 1 0 011.12-.293z" />
-                          </svg>
-                        </button>
-                      )}
                       {campaign.status === 'RUNNING' && (
                         <button
                           onClick={() => handleToggleCampaign(campaign.id, 'pause')}
@@ -1024,7 +791,7 @@ export function CampaignsPage() {
                           </svg>
                         </button>
                       )}
-                      {['PENDING', 'COMPLETED', 'FAILED'].includes(campaign.status) && (
+                      {campaign.status !== 'RUNNING' && (
                         <button
                           onClick={() => handleDeleteCampaign(campaign.id)}
                           className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
@@ -1042,100 +809,12 @@ export function CampaignsPage() {
               ))}
             </div>
           )}
-
-          {/* Paginação */}
-          {campaignsTotal > 0 && (
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-              <div className="text-sm text-gray-700">
-                Mostrando {((campaignsCurrentPage - 1) * campaignsPerPage) + 1} a {Math.min(campaignsCurrentPage * campaignsPerPage, campaignsTotal)} de {campaignsTotal} campanhas
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCampaignsCurrentPage(page => Math.max(page - 1, 1))}
-                  disabled={campaignsCurrentPage === 1}
-                  className="px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Anterior
-                </button>
-
-                <div className="flex items-center gap-1">
-                  {(() => {
-                    const totalPages = Math.ceil(campaignsTotal / campaignsPerPage);
-                    const pages = [];
-                    const maxVisiblePages = 5;
-                    
-                    let startPage = Math.max(1, campaignsCurrentPage - Math.floor(maxVisiblePages / 2));
-                    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-                    
-                    if (endPage - startPage + 1 < maxVisiblePages) {
-                      startPage = Math.max(1, endPage - maxVisiblePages + 1);
-                    }
-
-                    if (startPage > 1) {
-                      pages.push(
-                        <button
-                          key={1}
-                          onClick={() => setCampaignsCurrentPage(1)}
-                          className="px-3 py-2 text-sm rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300"
-                        >
-                          1
-                        </button>
-                      );
-                      if (startPage > 2) {
-                        pages.push(<span key="ellipsis1" className="px-2 text-gray-500">...</span>);
-                      }
-                    }
-
-                    for (let i = startPage; i <= endPage; i++) {
-                      pages.push(
-                        <button
-                          key={i}
-                          onClick={() => setCampaignsCurrentPage(i)}
-                          className={`px-3 py-2 text-sm rounded-md ${
-                            i === campaignsCurrentPage
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                          }`}
-                        >
-                          {i}
-                        </button>
-                      );
-                    }
-
-                    if (endPage < totalPages) {
-                      if (endPage < totalPages - 1) {
-                        pages.push(<span key="ellipsis2" className="px-2 text-gray-500">...</span>);
-                      }
-                      pages.push(
-                        <button
-                          key={totalPages}
-                          onClick={() => setCampaignsCurrentPage(totalPages)}
-                          className="px-3 py-2 text-sm rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300"
-                        >
-                          {totalPages}
-                        </button>
-                      );
-                    }
-
-                    return pages;
-                  })()}
-                </div>
-
-                <button
-                  onClick={() => setCampaignsCurrentPage(page => Math.min(page + 1, Math.ceil(campaignsTotal / campaignsPerPage)))}
-                  disabled={campaignsCurrentPage >= Math.ceil(campaignsTotal / campaignsPerPage)}
-                  className="px-3 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Próximo
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Modal de Criação */}
         {showCreateModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30 p-4">
+          <Portal>
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ zIndex: 9999 }}>
             <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[95vh] overflow-y-auto">
               <div className="flex justify-between items-center p-6 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
                 <div>
@@ -1179,9 +858,20 @@ export function CampaignsPage() {
 
                     {/* Categorias de Contatos */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Categorias de Contatos *
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Categorias de Contatos *
+                        </label>
+                        {contactTags.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleSelectAllTags}
+                            className="text-xs text-blue-600 hover:text-blue-700 font-medium underline"
+                          >
+                            {formData.targetTags.length === contactTags.length ? 'Desmarcar todas' : 'Selecionar todas'}
+                          </button>
+                        )}
+                      </div>
                       <p className="text-xs text-gray-500 mb-3">Selecione quais categorias de contatos receberão a campanha</p>
                       <div className="max-h-40 overflow-y-auto border border-gray-300 rounded-md p-3 bg-gray-50">
                         {contactTags.map((tag) => (
@@ -1206,9 +896,20 @@ export function CampaignsPage() {
 
                     {/* Conexões WhatsApp */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Conexões WhatsApp * ({formData.sessionNames.length} selecionadas)
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Conexões WhatsApp * ({formData.sessionNames.length} selecionadas)
+                        </label>
+                        {whatsappSessions.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleSelectAllSessions}
+                            className="text-xs text-blue-600 hover:text-blue-700 font-medium underline"
+                          >
+                            {formData.sessionNames.length === whatsappSessions.length ? 'Desmarcar todas' : 'Selecionar todas'}
+                          </button>
+                        )}
+                      </div>
                       <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                         <div className="flex items-start">
                           <svg className="h-5 w-5 text-green-500 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -1255,54 +956,21 @@ export function CampaignsPage() {
                     </div>
 
                     {/* Configuração de Envio */}
-                    <div className="space-y-4">
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Intervalo de Randomização (segundos)
+                        Tempo de Randomização (segundos)
                       </label>
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs text-gray-600 mb-1">
-                            Mínimo
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={formData.minRandomDelay}
-                            onChange={(e) => {
-                              const value = parseInt(e.target.value) || 0;
-                              setFormData(prev => ({ ...prev, minRandomDelay: value }));
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        
-                        <div>
-                          <label className="block text-xs text-gray-600 mb-1">
-                            Máximo
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={formData.randomDelay}
-                            onChange={(e) => {
-                              const value = parseInt(e.target.value) || 0;
-                              setFormData(prev => ({ ...prev, randomDelay: value }));
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                      </div>
-                      
-                      <p className="text-xs text-gray-500 mt-2">
-                        ⏱️ Intervalo aleatório entre {formData.minRandomDelay}s e {formData.randomDelay}s entre cada envio para evitar bloqueios do WhatsApp
+                      <input
+                        type="number"
+                        min="0"
+                        max="300"
+                        value={formData.randomDelay}
+                        onChange={(e) => setFormData(prev => ({ ...prev, randomDelay: parseInt(e.target.value) }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        ⏱️ Intervalo aleatório entre envios (0-{formData.randomDelay}s) para evitar bloqueios
                       </p>
-                      
-                      {formData.minRandomDelay > formData.randomDelay && (
-                        <p className="text-xs text-red-600 mt-1">
-                          ⚠️ O valor mínimo não pode ser maior que o máximo
-                        </p>
-                      )}
                     </div>
 
                     {/* Data de Envio */}
@@ -1346,30 +1014,6 @@ export function CampaignsPage() {
                         )}
                       </div>
                     </div>
-                      {/* Horários Comerciais e opção de criar pausada */}
-                      <div className="mt-4 border-t pt-4 flex items-center justify-between">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            // abrir modal para configurar horários durante criação
-                            setSelectedCampaignForBusinessHours(null);
-                            setShowBusinessHoursModal(true);
-                          }}
-                          className="px-3 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700"
-                        >
-                          Configurar horários comerciais
-                        </button>
-
-                        <label className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            checked={(formData as any).startPaused}
-                            onChange={(e) => setFormData(prev => ({ ...prev, startPaused: e.target.checked }))}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">Criar campanha pausada (pausa envios)</span>
-                        </label>
-                      </div>
                   </div>
 
                   {/* COLUNA DIREITA - Mensagens */}
@@ -1423,9 +1067,26 @@ export function CampaignsPage() {
 
                         <div className="space-y-3">
                           {('sequence' in formData.messageContent) && formData.messageContent.sequence.map((item, index) => (
-                            <div key={index} className="border border-gray-200 rounded-lg p-4">
+                            <div
+                              key={index}
+                              draggable
+                              onDragStart={() => handleDragStart(index)}
+                              onDragOver={(e) => handleDragOver(e, index)}
+                              onDrop={(e) => handleDrop(e, index)}
+                              onDragEnd={handleDragEnd}
+                              className={`border rounded-lg p-4 transition-all cursor-move ${
+                                draggedIndex === index
+                                  ? 'border-blue-500 bg-blue-50 opacity-50'
+                                  : draggedIndex !== null
+                                  ? 'border-gray-300 bg-gray-50'
+                                  : 'border-gray-200 bg-white hover:border-gray-300'
+                              }`}
+                            >
                               <div className="flex justify-between items-center mb-3">
-                                <span className="text-sm font-medium text-gray-600">Mensagem {index + 1}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-gray-400 cursor-move text-xl">⋮⋮</span>
+                                  <span className="text-sm font-medium text-gray-600">Mensagem {index + 1}</span>
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1461,6 +1122,9 @@ export function CampaignsPage() {
                                       case 'groq':
                                         newContent = { model: '', system: '', user: '' };
                                         break;
+                                      case 'wait':
+                                        newContent = { waitTime: 30 };
+                                        break;
                                       default:
                                         newContent = { url: '', caption: '' };
                                         break;
@@ -1477,13 +1141,14 @@ export function CampaignsPage() {
                                   }}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 >
-                                  <option value="text">Texto</option>
-                                  <option value="image">Imagem</option>
-                                  <option value="video">Vídeo</option>
-                                  <option value="audio">Áudio</option>
-                                  <option value="document">Arquivo</option>
-                                  <option value="openai">OpenAI</option>
-                                  <option value="groq">Groq AI</option>
+                                  <option value="text">💬 Texto</option>
+                                  <option value="image">🖼️ Imagem</option>
+                                  <option value="video">🎬 Vídeo</option>
+                                  <option value="audio">🎵 Áudio</option>
+                                  <option value="document">📄 Arquivo</option>
+                                  <option value="openai">🤖 OpenAI</option>
+                                  <option value="groq">⚡ Groq AI</option>
+                                  <option value="wait">⏱️ Espera</option>
                                 </select>
 
                                 {item.type === 'text' && (
@@ -2371,6 +2036,50 @@ export function CampaignsPage() {
                                     )}
                                   </div>
                                 )}
+
+                                {item.type === 'wait' && (
+                                  <div className="space-y-3">
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                      <div className="flex items-start gap-3">
+                                        <span className="text-2xl">⏱️</span>
+                                        <div className="flex-1">
+                                          <h4 className="text-sm font-medium text-yellow-900 mb-2">
+                                            Tempo de Espera
+                                          </h4>
+                                          <p className="text-xs text-yellow-700 mb-3">
+                                            Aguarda um tempo antes de enviar a próxima mensagem
+                                          </p>
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              type="number"
+                                              min="1"
+                                              max="3600"
+                                              value={item.content.waitTime || 30}
+                                              onChange={(e) => {
+                                                const currentSequence = ('sequence' in formData.messageContent) ? formData.messageContent.sequence : [];
+                                                const newSequence = currentSequence.map((seqItem, i) =>
+                                                  i === index ? {
+                                                    ...seqItem,
+                                                    content: { waitTime: parseInt(e.target.value) || 30 }
+                                                  } : seqItem
+                                                );
+                                                setFormData(prev => ({
+                                                  ...prev,
+                                                  messageContent: { sequence: newSequence }
+                                                }));
+                                              }}
+                                              className="w-24 px-3 py-2 border border-yellow-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500 bg-white"
+                                            />
+                                            <span className="text-sm text-yellow-700">segundos</span>
+                                          </div>
+                                          <p className="text-xs text-yellow-600 mt-2">
+                                            Mínimo: 1 segundo | Máximo: 3600 segundos (1 hora)
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -2406,11 +2115,13 @@ export function CampaignsPage() {
               </form>
             </div>
           </div>
+          </Portal>
         )}
 
         {/* Modal de Relatórios */}
         {showReportModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
+          <Portal>
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center backdrop-blur-sm" style={{ zIndex: 9999 }}>
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto relative"
                  style={{ zIndex: 1000 }}>
               <div className="flex justify-between items-center p-6 border-b">
@@ -2731,36 +2442,7 @@ export function CampaignsPage() {
               </div>
             </div>
           </div>
-        )}
-        
-        {/* Modal de Edição de Mensagens */}
-        {showEditMessagesModal && selectedCampaignForEdit && (
-          <EditCampaignMessagesModal
-            isOpen={showEditMessagesModal}
-            campaignId={selectedCampaignForEdit}
-            onClose={() => {
-              setShowEditMessagesModal(false);
-              setSelectedCampaignForEdit(null);
-            }}
-            onSuccess={() => {
-              loadCampaigns();
-            }}
-          />
-        )}
-        
-        {/* Modal de Horários Comerciais (criação ou edição) */}
-        {showBusinessHoursModal && (
-          <BusinessHoursModal
-            isOpen={showBusinessHoursModal}
-            onClose={handleCloseBusinessHours}
-            campaignId={selectedCampaignForBusinessHours ? selectedCampaignForBusinessHours.id : undefined}
-            campaignName={selectedCampaignForBusinessHours ? selectedCampaignForBusinessHours.name : undefined}
-            onSaveLocal={
-              !selectedCampaignForBusinessHours
-                ? (config) => setFormData((prev: CampaignFormData) => ({ ...prev, businessHours: config }))
-                : undefined
-            }
-          />
+          </Portal>
         )}
       </div>
     </>

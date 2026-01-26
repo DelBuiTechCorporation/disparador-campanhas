@@ -93,7 +93,8 @@ export class AutomationService {
   private scheduledJobs: Map<string, cron.ScheduledTask> = new Map();
 
   private constructor() {
-    this.initializeActiveFlows();
+    // Inicialização assíncrona movida para não travar o servidor
+    // this.initializeActiveFlows();
   }
 
   public static getInstance(): AutomationService {

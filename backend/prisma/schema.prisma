@@ -13,29 +13,33 @@ datasource db {
 // ============================================================================
 
 model Tenant {
-  id           String   @id @default(uuid())
-  slug         String   @unique // URL-friendly identifier
-  name         String
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid())
+  slug             String   @unique // URL-friendly identifier
+  name             String
+  active           Boolean  @default(true)
+  allowedProviders String[] @default(["WAHA"]) @map("allowed_providers") // Provedores WhatsApp permitidos
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   // Relations
-  users            User[]
-  userTenants      UserTenant[] // Relacionamento muitos-para-muitos
-  contacts         Contact[]
-  categories       Category[]
-  campaigns        Campaign[]
-  campaignMessages CampaignMessage[]
-  whatsappSessions WhatsAppSession[]
-  quotas           TenantQuota?
-  settings         TenantSettings?
-  alerts           Alert[]
-  messageTemplates MessageTemplate[]
-  automationFlows  AutomationFlow[]
-  integrations     Integration[]
-  auditLogs        AuditLog[]
+  users                        User[]
+  userTenants                  UserTenant[] // Relacionamento muitos-para-muitos
+  contacts                     Contact[]
+  categories                   Category[]
+  campaigns                    Campaign[]
+  campaignMessages             CampaignMessage[]
+  whatsappSessions             WhatsAppSession[]
+  quotas                       TenantQuota?
+  settings                     TenantSettings?
+  alerts                       Alert[]
+  messageTemplates             MessageTemplate[]
+  automationFlows              AutomationFlow[]
+  integrations                 Integration[]
+  auditLogs                    AuditLog[]
   businessHours    BusinessHours[]
+  connections                  Connection[]
+  interactiveCampaigns         InteractiveCampaign[]
+  interactiveCampaignSessions  InteractiveCampaignSession[]
 
   @@map("tenants")
 }
@@ -115,20 +119,21 @@ model GlobalSettings {
 // ============================================================================
 
 model Contact {
-  id           String   @id @default(uuid())
-  nome         String
-  telefone     String
-  email        String?
-  tags         String[]
-  observacoes  String?
-  categoriaId  String?  @map("categoria_id")
-  tenantId     String?  @map("tenant_id") // Optional for backward compatibility
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  id            String   @id @default(uuid())
+  nome          String
+  telefone      String
+  email         String?
+  tags          String[]
+  observacoes   String?
+  categoriaId   String?  @map("categoria_id")
+  tenantId      String?  @map("tenant_id") // Optional for backward compatibility
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
 
   // Relations
-  categoria Category? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
-  tenant    Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categoria                   Category?                    @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  tenant                      Tenant?                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  interactiveCampaignSessions InteractiveCampaignSession[]
 
   @@index([tenantId])
   @@index([categoriaId])
@@ -153,23 +158,25 @@ model Category {
 }
 
 model WhatsAppSession {
-  id             String     @id @default(uuid())
-  name           String     @unique // Nome real usado na API (ex: vendas_c52982e8)
-  displayName    String?    @map("display_name") // Nome exibido ao usuário (ex: vendas)
-  status         String
-  config         String?
-  meId           String?    @map("me_id")
-  mePushName     String?    @map("me_push_name")
-  meLid          String?    @map("me_lid")
-  meJid          String?    @map("me_jid")
-  qr             String?
-  qrExpiresAt    DateTime?  @map("qr_expires_at")
-  assignedWorker String?    @map("assigned_worker")
-  tenantId       String?    @map("tenant_id") // Optional for backward compatibility
-  criadoEm       DateTime   @default(now()) @map("criado_em")
-  atualizadoEm   DateTime   @updatedAt @map("atualizado_em")
-  provider       WhatsAppProvider     @default(WAHA)
-  campaigns      Campaign[]
+  id                         String     @id @default(uuid())
+  name                       String     @unique // Nome real usado na API (ex: vendas_c52982e8)
+  displayName                String?    @map("display_name") // Nome exibido ao usuário (ex: vendas)
+  status                     String
+  config                     String?
+  meId                       String?    @map("me_id")
+  mePushName                 String?    @map("me_push_name")
+  meLid                      String?    @map("me_lid")
+  meJid                      String?    @map("me_jid")
+  qr                         String?
+  qrExpiresAt                DateTime?  @map("qr_expires_at")
+  assignedWorker             String?    @map("assigned_worker")
+  tenantId                   String?    @map("tenant_id") // Optional for backward compatibility
+  criadoEm                   DateTime   @default(now()) @map("criado_em")
+  atualizadoEm               DateTime   @updatedAt @map("atualizado_em")
+  provider                   String     @default("WAHA")
+  interactiveCampaignEnabled Boolean    @default(false) @map("interactive_campaign_enabled") // Habilitar webhooks para campanhas interativas
+  webhookSecret              String?    @map("webhook_secret") // Token único para validar webhooks
+  campaigns                  Campaign[]
 
   // Relations
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -617,4 +624,121 @@ model BusinessHours {
 
   @@index([tenantId])
   @@map("business_hours")
+}
+
+// ============================================================================
+// INTERACTIVE CAMPAIGNS SYSTEM
+// ============================================================================
+
+model Connection {
+  id              String   @id @default(uuid())
+  provider        String   // 'WAHA'
+  instanceName    String   @map("instance_name")
+  phoneNumber     String   @map("phone_number") // E.164
+  status          String   @default("ACTIVE") // 'ACTIVE' | 'INACTIVE' | 'ERROR'
+  callbackUrl     String   @map("callback_url")
+  webhookSecret   String   @map("webhook_secret") // para HMAC
+  tenantId        String?  @map("tenant_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant              Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages            Message[]
+  campaigns           InteractiveCampaign[]
+  webhookSubscriptions WebhookSubscription[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("connections")
+}
+
+model InteractiveCampaign {
+  id            String    @id @default(uuid())
+  connectionId  String?   @map("connection_id")
+  name          String
+  status        String    @default("DRAFT") // 'DRAFT' | 'SCHEDULED' | 'STARTED' | 'PAUSED' | 'COMPLETED'
+  scheduledDate DateTime? @map("scheduled_date") // Data/hora agendada para início
+  graph         Json      // json com nodes/edges/config
+  tenantId      String?   @map("tenant_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  connection      Connection?                  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  tenant          Tenant?                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactSessions InteractiveCampaignSession[]
+
+  @@index([connectionId])
+  @@index([tenantId])
+  @@index([status])
+  @@map("interactive_campaigns")
+}
+
+// Tabela para rastrear o estado de cada contato em uma campanha interativa
+model InteractiveCampaignSession {
+  id            String    @id @default(uuid())
+  campaignId    String    @map("campaign_id")
+  contactId     String    @map("contact_id")
+  contactPhone  String    @map("contact_phone") // Telefone do contato (para busca rápida)
+  currentNodeId String    @map("current_node_id") // ID do nó atual no fluxo
+  status        String    @default("ACTIVE") // 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'EXPIRED'
+  variables     Json      @default("{}") // Variáveis armazenadas durante o fluxo (respostas, dados personalizados)
+  visitedNodes  Json      @default("[]") @map("visited_nodes") // Array de {nodeId, visitedAt, sent} para tracking de nós visitados
+  lastMessageAt DateTime? @map("last_message_at") // Última mensagem enviada ou recebida
+  lastResponse  String?   @map("last_response") @db.Text // Última resposta do contato
+  tenantId      String?   @map("tenant_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  campaign InteractiveCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tenant   Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId]) // Um contato só pode ter uma sessão ativa por campanha
+  @@index([campaignId])
+  @@index([contactId])
+  @@index([contactPhone])
+  @@index([status])
+  @@index([tenantId])
+  @@map("interactive_campaign_sessions")
+}
+
+model Message {
+  id                String   @id @default(uuid())
+  connectionId      String   @map("connection_id")
+  direction         String   // 'INBOUND' | 'OUTBOUND'
+  type              String   // 'text' | 'image' | 'audio' | 'document' ...
+  providerMessageId String   @unique @map("provider_message_id")
+  fromNumber        String   @map("from_number")
+  toNumber          String   @map("to_number")
+  content           String?
+  payload           Json?
+  status            String?  // 'received' | 'sent' | 'delivered' | 'read' | 'failed'
+  timestamp         DateTime
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  // Relations
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId])
+  @@index([direction])
+  @@index([timestamp])
+  @@map("messages")
+}
+
+model WebhookSubscription {
+  id           String   @id @default(uuid())
+  connectionId String   @map("connection_id")
+  url          String
+  secret       String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId])
+  @@map("webhook_subscriptions")
 }

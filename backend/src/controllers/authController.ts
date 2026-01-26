@@ -2,10 +2,8 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
-import { PrismaClient } from '@prisma/client';
 import { AuthenticatedRequest } from '../middleware/auth';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 const JWT_SECRET: string = process.env.JWT_SECRET || 'astra-online-secure-key-2024';
 const JWT_EXPIRES_IN: string = process.env.JWT_EXPIRES_IN || '24h';

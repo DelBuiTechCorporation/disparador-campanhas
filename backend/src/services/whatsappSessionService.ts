@@ -18,40 +18,13 @@ export interface WhatsAppSessionData {
   qrExpiresAt?: Date;
   assignedWorker?: string;
   tenantId?: string;
-}
-
-export interface GetAllSessionsOptions {
-  tenantId?: string;
-  search?: string;
-  status?: string;
-  sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
-  page?: number;
-  limit?: number;
+  interactiveCampaignEnabled?: boolean; // Habilitar webhooks para campanhas interativas
+  webhookSecret?: string; // Token único para validar webhooks
 }
 
 export class WhatsAppSessionService {
-  static async getAllSessions(tenantIdOrOptions?: string | GetAllSessionsOptions) {
-    // Suporte a chamada antiga (apenas tenantId) e nova (objeto de opções)
-    let options: GetAllSessionsOptions = {};
-    
-    if (typeof tenantIdOrOptions === 'string') {
-      options.tenantId = tenantIdOrOptions;
-    } else if (tenantIdOrOptions) {
-      options = tenantIdOrOptions;
-    }
-
-    const {
-      tenantId,
-      search = '',
-      status = '',
-      sortBy = 'atualizadoEm',
-      sortOrder = 'desc',
-      page = 1,
-      limit = 50
-    } = options;
-
-    console.log('📋 WhatsAppSessionService.getAllSessions - options:', { tenantId, search, status, sortBy, sortOrder, page, limit });
+  static async getAllSessions(tenantId?: string) {
+    console.log('📋 WhatsAppSessionService.getAllSessions - tenantId:', tenantId);
 
     // Construir filtros dinâmicos
     const where: any = {};
@@ -61,45 +34,18 @@ export class WhatsAppSessionService {
       where.tenantId = tenantId;
     }
 
-    // Filtro por busca (nome ou displayName)
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { displayName: { contains: search, mode: 'insensitive' } },
-        { mePushName: { contains: search, mode: 'insensitive' } }
-      ];
-    }
+    const sessions = await prisma.whatsAppSession.findMany({
+      where,
+      orderBy: { atualizadoEm: 'desc' }
+    });
 
-    // Filtro por status
-    if (status && ['WORKING', 'SCAN_QR_CODE', 'STOPPED', 'FAILED'].includes(status)) {
-      where.status = status;
-    }
+    console.log('📋 WhatsAppSessionService.getAllSessions - sessões encontradas:', sessions.length);
 
-    // Configurar ordenação
-    const validSortFields = ['atualizadoEm', 'criadoEm', 'name', 'displayName', 'status', 'mePushName'];
-    const sortField = validSortFields.includes(sortBy) ? sortBy : 'atualizadoEm';
-    const sortDirection = sortOrder === 'asc' ? 'asc' : 'desc';
-
-    // Calcular skip para paginação
-    const skip = (page - 1) * limit;
-
-    const [sessions, total] = await Promise.all([
-      prisma.whatsAppSession.findMany({
-        where,
-        orderBy: { [sortField]: sortDirection },
-        skip,
-        take: limit
-      }),
-      prisma.whatsAppSession.count({ where })
-    ]);
-
-    console.log('📋 WhatsAppSessionService.getAllSessions - sessões encontradas:', sessions.length, 'de', total);
-
-    const mappedSessions = sessions.map(session => ({
+    return sessions.map(session => ({
       name: session.name,
       displayName: session.displayName || session.name,
       status: session.status,
-      provider: session.provider as 'WAHA',
+      provider: 'WAHA' as const,
       config: session.config ? JSON.parse(session.config) : {},
       me: session.meId ? {
         id: session.meId,
@@ -112,14 +58,6 @@ export class WhatsAppSessionService {
       assignedWorker: session.assignedWorker,
       tenantId: session.tenantId
     }));
-
-    return {
-      sessions: mappedSessions,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit)
-    };
   }
 
   static async getSession(name: string, tenantId?: string) {
@@ -145,7 +83,7 @@ export class WhatsAppSessionService {
       name: session.name,
       displayName: session.displayName || session.name,
       status: session.status,
-      provider: session.provider,
+      provider: 'WAHA' as const,
       config: session.config ? JSON.parse(session.config) : {},
       me: session.meId ? {
         id: session.meId,
@@ -163,10 +101,13 @@ export class WhatsAppSessionService {
   static async createOrUpdateSession(data: WhatsAppSessionData) {
     console.log('💾 WhatsAppSessionService.createOrUpdateSession - data:', {
       name: data.name,
-      tenantId: data.tenantId
+      tenantId: data.tenantId,
+      interactiveCampaignEnabled: data.interactiveCampaignEnabled,
+      webhookSecret: data.webhookSecret ? '***' : undefined
     });
 
-    const sessionData = {
+    // Dados base para criação
+    const baseData = {
       name: data.name,
       displayName: data.displayName || data.name,
       status: data.status,
@@ -179,20 +120,36 @@ export class WhatsAppSessionService {
       qr: data.qr || null,
       qrExpiresAt: data.qrExpiresAt || null,
       assignedWorker: data.assignedWorker || null,
-      tenantId: data.tenantId || null
+      tenantId: data.tenantId || null,
+    };
+
+    // Dados para update - só incluir interactiveCampaignEnabled e webhookSecret se foram explicitamente passados
+    const updateData: any = {
+      ...baseData,
+      atualizadoEm: new Date()
+    };
+
+    // Só atualizar esses campos se foram explicitamente passados (não undefined)
+    if (data.interactiveCampaignEnabled !== undefined) {
+      updateData.interactiveCampaignEnabled = data.interactiveCampaignEnabled;
+    }
+    if (data.webhookSecret !== undefined) {
+      updateData.webhookSecret = data.webhookSecret;
+    }
+
+    // Dados para criação - incluir valores default
+    const createData = {
+      ...baseData,
+      interactiveCampaignEnabled: data.interactiveCampaignEnabled || false,
+      webhookSecret: data.webhookSecret || null,
+      criadoEm: new Date(),
+      atualizadoEm: new Date()
     };
 
     const session = await prisma.whatsAppSession.upsert({
       where: { name: data.name },
-      update: {
-        ...sessionData,
-        atualizadoEm: new Date()
-      },
-      create: {
-        ...sessionData,
-        criadoEm: new Date(),
-        atualizadoEm: new Date()
-      }
+      update: updateData,
+      create: createData
     });
 
     return session;

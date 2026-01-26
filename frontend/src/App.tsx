@@ -8,6 +8,8 @@ import { Navigation } from './components/Navigation';
 import { ContactsPage } from './pages/ContactsPage';
 import { WhatsAppConnectionsPage } from './pages/WhatsAppConnectionsPage';
 import { CampaignsPage } from './pages/CampaignsPage';
+import { InteractiveCampaignPage } from './pages/InteractiveCampaignPage';
+import { FlowBuilderPage } from './pages/FlowBuilderPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { UsersPage } from './pages/UsersPage';
 import { LoginPage } from './pages/LoginPage';
@@ -123,6 +125,22 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <CampaignsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/campanhas/interativa"
+            element={
+              <ProtectedRoute>
+                <InteractiveCampaignPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/campanhas/interativa/:id"
+            element={
+              <ProtectedRoute>
+                <FlowBuilderPage />
               </ProtectedRoute>
             }
           />

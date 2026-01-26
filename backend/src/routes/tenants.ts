@@ -4,10 +4,13 @@ import { authMiddleware } from '../middleware/auth';
 
 const router = Router();
 
-// Todas as rotas de tenants requerem autenticação e são limitadas a SUPERADMIN
+// Todas as rotas de tenants requerem autenticação
 router.use(authMiddleware);
 
-// GET /api/tenants - Listar todos os tenants
+// GET /api/tenants/allowed-providers - Obter provedores permitidos do tenant atual (qualquer usuário)
+router.get('/allowed-providers', TenantController.getAllowedProviders);
+
+// GET /api/tenants - Listar todos os tenants (SUPERADMIN only)
 router.get('/', TenantController.listTenants);
 
 // POST /api/tenants - Criar novo tenant

@@ -33,7 +33,7 @@ services:
         condition: on-failure
 
   backend:
-    image: work-backend:v0.0.2-20251020c
+    image: work-backend:v0.0.4-20251206120000
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/contacts?schema=public
       REDIS_URL: redis://redis:6379
@@ -42,6 +42,7 @@ services:
       NODE_ENV: production
       JWT_SECRET: your-super-secret-jwt-key-at-least-32-characters-long-trecofantastico
       JWT_EXPIRES_IN: 24h
+      APP_URL: https://work.trecofantastico.com.br
       DEFAULT_WAHA_HOST: ""
       DEFAULT_WAHA_API_KEY: ""
       DEFAULT_EVOLUTION_HOST: ""
@@ -77,7 +78,7 @@ services:
         - traefik.http.services.work-backend.loadbalancer.server.port=3001
 
   frontend:
-    image: work-frontend:v0.0.2-20251020a
+    image: work-frontend:v0.0.4-20251206120000
     networks:
       - network_public
     depends_on:
