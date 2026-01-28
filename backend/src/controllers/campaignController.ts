@@ -817,31 +817,6 @@ export const setBusinessHours = async (req: AuthenticatedRequest, res: Response)
   }
 };
 
-// Get business hours for a campaign
-export const getBusinessHours = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-
-    // Validate campaign exists and user has access
-    const where: any = { id };
-    if (req.user?.role !== 'SUPERADMIN') {
-      where.tenantId = req.tenantId;
-    }
-
-    const campaign = await prisma.campaign.findFirst({ where });
-    if (!campaign) {
-      return res.status(404).json({ error: 'Campanha não encontrada' });
-    }
-
-    const businessHours = await BusinessHoursService.getBusinessHours(id);
-    
-    res.json(businessHours || {});
-  } catch (error) {
-    console.error('Erro ao buscar horários comerciais:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-};
-
 // Check if current time is within business hours
 export const checkBusinessHours = async (req: AuthenticatedRequest, res: Response) => {
   try {
