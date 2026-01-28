@@ -125,19 +125,38 @@ model Contact {
   email         String?
   tags          String[]
   observacoes   String?
-  categoriaId   String?  @map("categoria_id")
+  categoriaId   String?  @map("categoria_id") // DEPRECATED: Manter para compatibilidade com dados antigos
   tenantId      String?  @map("tenant_id") // Optional for backward compatibility
   criadoEm      DateTime @default(now())
   atualizadoEm  DateTime @updatedAt
 
   // Relations
-  categoria                   Category?                    @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  categoria                   Category?                    @relation("LegacyContactCategory", fields: [categoriaId], references: [id], onDelete: SetNull)
+  categories                  ContactCategory[]            // Many-to-many: um contato pode ter múltiplas categorias
   tenant                      Tenant?                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   interactiveCampaignSessions InteractiveCampaignSession[]
 
   @@index([tenantId])
   @@index([categoriaId])
   @@map("contacts")
+}
+
+// Tabela de junção many-to-many entre Contact e Category
+model ContactCategory {
+  id         String   @id @default(uuid())
+  contactId  String   @map("contact_id")
+  categoryId String   @map("category_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, categoryId]) // Um contato não pode ter a mesma categoria duplicada
+  @@index([contactId])
+  @@index([categoryId])
+  @@map("contact_categories")
 }
 
 model Category {
@@ -150,8 +169,9 @@ model Category {
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
   // Relations
-  contacts    Contact[]
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts         Contact[]         @relation("LegacyContactCategory") // DEPRECATED: Relação antiga
+  contactCategories ContactCategory[] // Many-to-many: uma categoria pode ter múltiplos contatos
+  tenant           Tenant?           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@map("categories")

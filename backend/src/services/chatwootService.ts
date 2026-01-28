@@ -10,13 +10,13 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // Map para controlar sincronizações em progresso por tenant
 const syncInProgress = new Map<string, AbortController>();
 
-// Cache de conversas paginadas com TTL
-interface ConversationsCache {
-  data: ChatwootConversation[];
+// Cache de contatos paginados com TTL
+interface ContactsCache {
+  data: ChatwootContact[];
   timestamp: number;
   ttl: number; // em milissegundos
 }
-const conversationsCache = new Map<string, ConversationsCache>();
+const contactsCache = new Map<string, ContactsCache>();
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutos
 
 interface TagMapping {
@@ -24,21 +24,13 @@ interface TagMapping {
   categoryId: string;
 }
 
-interface ChatwootConversation {
+interface ChatwootContact {
   id: number;
-  account_id: number;
-  inbox_id: number;
-  status: string;
+  name: string;
+  email: string | null;
+  phone_number: string | null;
+  identifier: string | null;
   labels: string[];
-  meta: {
-    sender: {
-      id: number;
-      name: string;
-      email: string | null;
-      phone_number: string | null;
-      identifier: string | null;
-    };
-  };
 }
 
 export class ChatwootService {
@@ -65,14 +57,14 @@ export class ChatwootService {
         throw new Error('Chatwoot não está configurado. Configure na página de Integrações.');
       }
 
-      const conversations: ChatwootConversation[] = [];
+      const contacts: ChatwootContact[] = [];
       let page = 1;
       let hasMore = true;
       let pagesFetched = 0;
       let hasWarning = false;
       const warnings: string[] = [];
 
-      // Paginar através de todas as conversas
+      // Paginar através de todos os contatos
       while (hasMore) {
         // Verificar se foi cancelado ANTES de fazer nova requisição
         if (abortController.signal.aborted) {
@@ -81,10 +73,10 @@ export class ChatwootService {
         }
 
         try {
-          console.log(`📄 Buscando página ${page} de conversas do Chatwoot...`);
+          console.log(`📄 Buscando página ${page} de contatos do Chatwoot...`);
           
           const response = await axios.get(
-            `${settings.chatwootUrl}/api/v1/accounts/${settings.chatwootAccountId}/conversations?page=${page}&per_page=100`,
+            `${settings.chatwootUrl}/api/v1/accounts/${settings.chatwootAccountId}/contacts?page=${page}&sort=name`,
             {
               headers: {
                 'api_access_token': settings.chatwootApiToken
@@ -94,15 +86,20 @@ export class ChatwootService {
             }
           );
 
-          const pageData: ChatwootConversation[] = response.data.data?.payload || [];
+          const pageData: ChatwootContact[] = response.data.payload || [];
           
           if (pageData.length === 0) {
             console.log(`✅ Paginação completa na página ${page} (payload vazio)`);
             hasMore = false;
           } else {
-            conversations.push(...pageData);
+            // Filtrar contatos de grupos (identifier terminando em @g.us)
+            const filteredData = pageData.filter(contact => !contact.identifier?.endsWith('@g.us'));
+            if (filteredData.length < pageData.length) {
+              console.log(`🚫 Ignorados ${pageData.length - filteredData.length} grupos (@g.us)`);
+            }
+            contacts.push(...filteredData);
             pagesFetched++;
-            console.log(`✅ Página ${page}: ${pageData.length} conversas carregadas (total: ${conversations.length})`);
+            console.log(`✅ Página ${page}: ${filteredData.length} contatos carregados (total: ${contacts.length})`);
             page++;
             
             // Delay de 2 segundos entre requisições para não sobrecarregar
@@ -132,13 +129,13 @@ export class ChatwootService {
       // Agregar tags e contar contatos únicos por tag
       const tagMap = new Map<string, Set<number>>();
 
-      conversations.forEach((conv) => {
-        if (conv.labels && conv.labels.length > 0 && conv.meta?.sender?.id) {
-          conv.labels.forEach((tag) => {
+      contacts.forEach((contact) => {
+        if (contact.labels && contact.labels.length > 0 && contact.id) {
+          contact.labels.forEach((tag) => {
             if (!tagMap.has(tag)) {
               tagMap.set(tag, new Set());
             }
-            tagMap.get(tag)!.add(conv.meta.sender.id);
+            tagMap.get(tag)!.add(contact.id);
           });
         }
       });
@@ -152,7 +149,7 @@ export class ChatwootService {
       // Ordenar por nome
       tags.sort((a, b) => a.name.localeCompare(b.name));
 
-      const summaryMsg = `✅ Carregadas ${conversations.length} conversas do Chatwoot em ${pagesFetched} páginas com ${tags.length} tags únicas`;
+      const summaryMsg = `✅ Carregados ${contacts.length} contatos do Chatwoot em ${pagesFetched} páginas com ${tags.length} tags únicas`;
       console.log(summaryMsg);
 
       if (hasWarning) {
@@ -197,34 +194,34 @@ export class ChatwootService {
         throw new Error('Chatwoot não está configurado. Configure na página de Integrações.');
       }
 
-      const conversations: ChatwootConversation[] = [];
+      const contacts: ChatwootContact[] = [];
       let page = 1;
       let hasMore = true;
       let pagesFetched = 0;
       const tagsAccumulated = new Map<string, Set<number>>();
 
-      // Paginar através de todas as conversas e fazer callbacks
+      // Paginar através de todos os contatos e fazer callbacks
       while (hasMore) {
         // Verificar se foi cancelado ANTES de fazer nova requisição
         if (abortController.signal.aborted) {
           console.log(`⚠️ Sincronização cancelada pelo usuário. Parando loop de paginação`);
-          // Salvar cache mesmo se cancelado (conversas já carregadas)
-          if (conversations.length > 0) {
-            conversationsCache.set(tenantId, {
-              data: conversations,
+          // Salvar cache mesmo se cancelado (contatos já carregados)
+          if (contacts.length > 0) {
+            contactsCache.set(tenantId, {
+              data: contacts,
               timestamp: Date.now(),
               ttl: CACHE_TTL
             });
-            console.log(`💾 Cache salvo mesmo com cancelamento: ${conversations.length} conversas armazenadas`);
+            console.log(`💾 Cache salvo mesmo com cancelamento: ${contacts.length} contatos armazenados`);
           }
           throw new Error('Sincronização cancelada pelo usuário');
         }
 
         try {
-          console.log(`📄 Buscando página ${page} de conversas do Chatwoot...`);
+          console.log(`📄 Buscando página ${page} de contatos do Chatwoot...`);
           
           const response = await axios.get(
-            `${settings.chatwootUrl}/api/v1/accounts/${settings.chatwootAccountId}/conversations?page=${page}&per_page=100`,
+            `${settings.chatwootUrl}/api/v1/accounts/${settings.chatwootAccountId}/contacts?page=${page}&sort=name`,
             {
               headers: {
                 'api_access_token': settings.chatwootApiToken
@@ -234,24 +231,29 @@ export class ChatwootService {
             }
           );
 
-          const pageData: ChatwootConversation[] = response.data.data?.payload || [];
+          const pageData: ChatwootContact[] = response.data.payload || [];
           
           if (pageData.length === 0) {
             console.log(`✅ Paginação completa na página ${page} (payload vazio)`);
             hasMore = false;
           } else {
-            conversations.push(...pageData);
+            // Filtrar contatos de grupos (identifier terminando em @g.us)
+            const filteredData = pageData.filter(contact => !contact.identifier?.endsWith('@g.us'));
+            if (filteredData.length < pageData.length) {
+              console.log(`🚫 Ignorados ${pageData.length - filteredData.length} grupos (@g.us)`);
+            }
+            contacts.push(...filteredData);
             pagesFetched++;
-            console.log(`✅ Página ${page}: ${pageData.length} conversas carregadas (total: ${conversations.length})`);
+            console.log(`✅ Página ${page}: ${filteredData.length} contatos carregados (total: ${contacts.length})`);
             
             // Atualizar tags e enviar callback
-            pageData.forEach((conv) => {
-              if (conv.labels && conv.labels.length > 0 && conv.meta?.sender?.id) {
-                conv.labels.forEach((tag) => {
+            filteredData.forEach((contact) => {
+              if (contact.labels && contact.labels.length > 0 && contact.id) {
+                contact.labels.forEach((tag) => {
                   if (!tagsAccumulated.has(tag)) {
                     tagsAccumulated.set(tag, new Set());
                   }
-                  tagsAccumulated.get(tag)?.add(conv.meta.sender.id);
+                  tagsAccumulated.get(tag)?.add(contact.id);
                 });
               }
             });
@@ -267,12 +269,12 @@ export class ChatwootService {
             onUpdate(tagsArray);
             
             // Salvar cache progressivamente a cada página
-            conversationsCache.set(tenantId, {
-              data: conversations,
+            contactsCache.set(tenantId, {
+              data: contacts,
               timestamp: Date.now(),
               ttl: CACHE_TTL
             });
-            console.log(`💾 Cache atualizado progressivamente: ${conversations.length} conversas`);
+            console.log(`💾 Cache atualizado progressivamente: ${contacts.length} contatos`);
             
             page++;
             
@@ -306,13 +308,13 @@ export class ChatwootService {
 
       console.log(`🏁 Carregamento de tags finalizado - Total: ${tagsAccumulated.size} tags únicas`);
       
-      // Salvar conversas no cache (final ou cancelado)
-      conversationsCache.set(tenantId, {
-        data: conversations,
+      // Salvar contatos no cache (final ou cancelado)
+      contactsCache.set(tenantId, {
+        data: contacts,
         timestamp: Date.now(),
         ttl: CACHE_TTL
       });
-      console.log(`💾 Cache finalizado para tenant ${tenantId}: ${conversations.length} conversas (válido por 10 minutos)`);
+      console.log(`💾 Cache finalizado para tenant ${tenantId}: ${contacts.length} contatos (válido por 10 minutos)`);
       
       syncInProgress.delete(tenantId);
 
@@ -365,8 +367,8 @@ export class ChatwootService {
       }
 
       // Verificar se existe cache válido
-      const cached = conversationsCache.get(tenantId);
-      let conversations: ChatwootConversation[];
+      const cached = contactsCache.get(tenantId);
+      let contacts: ChatwootContact[];
       let pagesFetched = 0;
       let hasWarning = false;
       const warnings: string[] = [];
@@ -376,7 +378,7 @@ export class ChatwootService {
         const remainingTTL = cached.ttl - age;
         const isValid = remainingTTL > 0;
         
-        console.log(`💾 Cache encontrado: ${cached.data.length} conversas`);
+        console.log(`💾 Cache encontrado: ${cached.data.length} contatos`);
         console.log(`💾 Idade do cache: ${Math.round(age / 1000)}s`);
         console.log(`💾 TTL restante: ${Math.round(remainingTTL / 1000)}s`);
         console.log(`💾 Cache válido: ${isValid ? 'SIM ✅' : 'NÃO (expirado) ❌'}`);
@@ -385,17 +387,17 @@ export class ChatwootService {
       }
 
       if (cached && (Date.now() - cached.timestamp) < cached.ttl) {
-        console.log(`📦 Usando conversas em cache (${cached.data.length} conversas) - evitando re-paginação!`);
-        conversations = cached.data;
+        console.log(`📦 Usando contatos em cache (${cached.data.length} contatos) - evitando re-paginação!`);
+        contacts = cached.data;
       } else {
         if (cached) {
-          console.log(`⏰ Cache expirado, buscando conversas novamente...`);
+          console.log(`⏰ Cache expirado, buscando contatos novamente...`);
         } else {
           console.log(`🔍 Nenhum cache disponível, iniciando paginação...`);
         }
 
-        // Buscar todas as conversas com paginação
-        conversations = [];
+        // Buscar todos os contatos com paginação
+        contacts = [];
         let page = 1;
         let hasMore = true;
 
@@ -410,7 +412,7 @@ export class ChatwootService {
             console.log(`📄 Buscando página ${page} para sincronização...`);
             
             const response = await axios.get(
-              `${settings.chatwootUrl}/api/v1/accounts/${settings.chatwootAccountId}/conversations?page=${page}&per_page=100`,
+              `${settings.chatwootUrl}/api/v1/accounts/${settings.chatwootAccountId}/contacts?page=${page}&sort=name`,
               {
                 headers: {
                   'api_access_token': settings.chatwootApiToken
@@ -420,15 +422,20 @@ export class ChatwootService {
               }
             );
 
-            const pageData: ChatwootConversation[] = response.data.data?.payload || [];
+            const pageData: ChatwootContact[] = response.data.payload || [];
             
             if (pageData.length === 0) {
               console.log(`✅ Paginação completa na página ${page}`);
               hasMore = false;
             } else {
-              conversations.push(...pageData);
+              // Filtrar contatos de grupos (identifier terminando em @g.us)
+              const filteredData = pageData.filter(contact => !contact.identifier?.endsWith('@g.us'));
+              if (filteredData.length < pageData.length) {
+                console.log(`🚫 Ignorados ${pageData.length - filteredData.length} grupos (@g.us)`);
+              }
+              contacts.push(...filteredData);
               pagesFetched++;
-              console.log(`✅ Página ${page}: ${pageData.length} conversas (total: ${conversations.length})`);
+              console.log(`✅ Página ${page}: ${filteredData.length} contatos (total: ${contacts.length})`);
               page++;
               
               // Delay de 2 segundos entre requisições
@@ -456,20 +463,20 @@ export class ChatwootService {
         }
 
         // Salvar no cache
-        conversationsCache.set(tenantId, {
-          data: conversations,
+        contactsCache.set(tenantId, {
+          data: contacts,
           timestamp: Date.now(),
           ttl: CACHE_TTL
         });
-        console.log(`💾 Cache atualizado: ${conversations.length} conversas armazenadas`);
+        console.log(`💾 Cache atualizado: ${contacts.length} contatos armazenados`);
       }
 
-      console.log(`📊 Total de ${conversations.length} conversas ${cached && (Date.now() - cached.timestamp) < cached.ttl ? 'do cache' : `carregadas em ${pagesFetched} páginas`}`);
+      console.log(`📊 Total de ${contacts.length} contatos ${cached && (Date.now() - cached.timestamp) < cached.ttl ? 'do cache' : `carregados em ${pagesFetched} páginas`}`);
       console.log(`🔄 Iniciando processamento de ${tagMappings.length} mapeamentos de tags...`);
 
       let imported = 0;
       let updated = 0;
-      const processedContacts = new Set<string>();
+      const processedPhoneCategories = new Map<string, Set<string>>(); // Track phone + category combos
 
       // Processar cada mapping
       for (const mapping of tagMappings) {
@@ -478,26 +485,24 @@ export class ChatwootService {
           throw new Error('Sincronização cancelada pelo usuário');
         }
 
-        // Filtrar conversas com a tag específica
-        const tagConversations = conversations.filter((conv) =>
-          conv.labels && conv.labels.includes(mapping.chatwootTag)
+        // Filtrar contatos com a tag específica
+        const tagContacts = contacts.filter((contact) =>
+          contact.labels && contact.labels.includes(mapping.chatwootTag)
         );
 
-        console.log(`📋 Tag "${mapping.chatwootTag}": ${tagConversations.length} conversas encontradas → Categoria: ${mapping.categoryId}`);
+        console.log(`📋 Tag "${mapping.chatwootTag}": ${tagContacts.length} contatos encontrados → Categoria: ${mapping.categoryId}`);
 
-        for (const conv of tagConversations) {
-          const contact = conv.meta?.sender;
-
-          // Validar se sender existe
+        for (const contact of tagContacts) {
+          // Validar se contato existe
           if (!contact) {
-            console.log(`Conversa ${conv.id} sem sender, pulando...`);
+            console.log(`Contato inválido, pulando...`);
             continue;
           }
 
-          // Obter telefone (phone_number ou identifier como fallback)
+          // Obter telefone (phone_number ou source_id como fallback)
           let rawPhone = contact.phone_number;
           
-          // Se phone_number vazio, usar identifier
+          // Se ainda não tem telefone, usar identifier como fallback
           if (!rawPhone && contact.identifier) {
             // Extrair número do identifier (ex: "5511999999999@s.whatsapp.net" -> "5511999999999")
             rawPhone = contact.identifier.split('@')[0];
@@ -510,7 +515,7 @@ export class ChatwootService {
 
           // Validar se conseguiu obter telefone
           if (!rawPhone) {
-            console.log(`Contato ${contact.name} sem telefone ou identifier, pulando...`);
+            console.log(`Contato ${contact.name} sem telefone, source_id ou identifier, pulando...`);
             continue;
           }
 
@@ -528,47 +533,84 @@ export class ChatwootService {
             continue;
           }
 
-          // Evitar processar o mesmo contato múltiplas vezes
-          if (processedContacts.has(normalizedPhone)) {
+          // Evitar processar a mesma combinação phone+category múltiplas vezes
+          if (!processedPhoneCategories.has(normalizedPhone)) {
+            processedPhoneCategories.set(normalizedPhone, new Set());
+          }
+          const phoneCategories = processedPhoneCategories.get(normalizedPhone)!;
+          
+          if (phoneCategories.has(mapping.categoryId)) {
+            console.log(`ℹ️ Combinação ${normalizedPhone} + categoria ${mapping.categoryId} já processada, pulando...`);
             continue;
           }
-          processedContacts.add(normalizedPhone);
+          phoneCategories.add(mapping.categoryId);
 
           // Verificar se contato já existe
           const existingContact = await prisma.contact.findFirst({
             where: {
               tenantId,
               telefone: normalizedPhone
+            },
+            include: {
+              categories: {
+                include: {
+                  category: true
+                }
+              }
             }
           });
 
           if (existingContact) {
-            // Atualizar contato existente
+            // Verificar se a categoria já está associada
+            const categoryExists = existingContact.categories.some(
+              cc => cc.categoryId === mapping.categoryId
+            );
+
+            if (!categoryExists) {
+              // Adicionar nova categoria ao contato existente (many-to-many)
+              await prisma.contactCategory.create({
+                data: {
+                  contactId: existingContact.id,
+                  categoryId: mapping.categoryId
+                }
+              });
+              console.log(`✅ Adicionada categoria "${mapping.chatwootTag}" ao contato: ${contact.name || 'Sem nome'} (${normalizedPhone})`);
+            } else {
+              console.log(`ℹ️ Contato ${contact.name || 'Sem nome'} já possui a categoria "${mapping.chatwootTag}"`);
+            }
+
+            // Atualizar dados básicos do contato (nome, email) se necessário
             await prisma.contact.update({
               where: { id: existingContact.id },
               data: {
                 nome: contact.name || existingContact.nome,
                 email: contact.email || existingContact.email,
-                categoriaId: mapping.categoryId,
-                observacoes: existingContact.observacoes
-                  ? `${existingContact.observacoes}\nImportado do Chatwoot - Tag: ${mapping.chatwootTag}`
-                  : `Importado do Chatwoot - Tag: ${mapping.chatwootTag}`
+                observacoes: existingContact.observacoes && !existingContact.observacoes.includes(mapping.chatwootTag)
+                  ? `${existingContact.observacoes}\nTag Chatwoot: ${mapping.chatwootTag}`
+                  : existingContact.observacoes || `Tag Chatwoot: ${mapping.chatwootTag}`
               }
             });
             updated++;
-            console.log(`✅ Atualizado: ${contact.name || 'Sem nome'} (${normalizedPhone}) → Categoria: ${mapping.categoryId}`);
           } else {
             // Criar novo contato
-            await prisma.contact.create({
+            const newContact = await prisma.contact.create({
               data: {
                 tenantId,
                 nome: contact.name || 'Sem nome',
                 telefone: normalizedPhone,
                 email: contact.email,
-                categoriaId: mapping.categoryId,
                 observacoes: `Importado do Chatwoot - Tag: ${mapping.chatwootTag}`
               }
             });
+
+            // Associar categoria ao novo contato (many-to-many)
+            await prisma.contactCategory.create({
+              data: {
+                contactId: newContact.id,
+                categoryId: mapping.categoryId
+              }
+            });
+
             imported++;
             console.log(`✅ Importado: ${contact.name || 'Sem nome'} (${normalizedPhone}) → Categoria: ${mapping.categoryId}`);
           }
@@ -604,10 +646,10 @@ export class ChatwootService {
   }
 
   clearCache(tenantId: string): void {
-    if (conversationsCache.has(tenantId)) {
-      const cache = conversationsCache.get(tenantId);
-      console.log(`🗑️ Limpando cache de ${cache?.data.length} conversas do tenant ${tenantId}`);
-      conversationsCache.delete(tenantId);
+    if (contactsCache.has(tenantId)) {
+      const cache = contactsCache.get(tenantId);
+      console.log(`🗑️ Limpando cache de ${cache?.data.length} contatos do tenant ${tenantId}`);
+      contactsCache.delete(tenantId);
     } else {
       console.log(`ℹ️ Nenhum cache encontrado para o tenant ${tenantId}`);
     }

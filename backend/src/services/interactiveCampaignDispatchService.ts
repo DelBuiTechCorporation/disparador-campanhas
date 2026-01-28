@@ -139,17 +139,20 @@ export const interactiveCampaignDispatchService = {
         console.log(`📎 Media URL: ${mediaUrl}, Type: ${mediaType}, File: ${fileName}`);
       }
 
-      // Buscar contatos das categorias configuradas
+      // Buscar contatos das categorias configuradas (usando many-to-many)
       const contacts = await prisma.contact.findMany({
         where: {
-          categoriaId: { in: categories },
           tenantId: campaign.tenantId,
+          categories: {
+            some: {
+              categoryId: { in: categories }
+            }
+          }
         },
         select: {
           id: true,
           nome: true,
           telefone: true,
-          categoriaId: true,
           tenantId: true,
           tags: true,
         },

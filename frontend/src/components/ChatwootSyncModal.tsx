@@ -156,7 +156,9 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
 
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${token}`,
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
       };
 
       if (selectedTenantId) {
@@ -166,6 +168,7 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
       const response = await fetch('/api/chatwoot/import', {
         method: 'POST',
         headers,
+        cache: 'no-store',
         body: JSON.stringify({
           tagMappings,
           tenantId: selectedTenantId // Para SUPERADMIN
@@ -173,8 +176,20 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || error.error || 'Erro ao importar contatos');
+        const contentType = response.headers.get('content-type');
+        if (contentType?.includes('application/json')) {
+          const error = await response.json();
+          throw new Error(error.message || error.error || 'Erro ao importar contatos');
+        } else {
+          const text = await response.text();
+          throw new Error(`Erro ao importar: ${response.status} - ${text.substring(0, 100)}`);
+        }
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType?.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Resposta inválida do servidor (esperado JSON, recebeu ${contentType}): ${text.substring(0, 100)}`);
       }
 
       const result = await response.json();
@@ -191,9 +206,15 @@ export function ChatwootSyncModal({ isOpen, onClose, onSuccess }: ChatwootSyncMo
       handleClose();
     } catch (error: any) {
       console.error('Erro ao importar:', error);
+      console.error('Stack:', error.stack);
       
       if (error.message.includes('não configurado') || error.message.includes('Configure')) {
         toast.error('Configure o Chatwoot na página de Integrações primeiro', { 
+          id: 'import-toast',
+          duration: 5000 
+        });
+      } else if (error.message.includes('not valid JSON') || error.message.includes('event:')) {
+        toast.error('Erro de comunicação com servidor. Tente novamente.', { 
           id: 'import-toast',
           duration: 5000 
         });

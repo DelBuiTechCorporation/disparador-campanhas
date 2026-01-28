@@ -166,4 +166,53 @@ export class ContactController {
       res.status(400).json(apiError);
     }
   }
+
+  static async bulkUpdateCategories(req: AuthenticatedRequest, res: Response) {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        const apiError: ApiError = {
+          error: 'Dados inválidos',
+          details: errors.array()
+        };
+        return res.status(400).json(apiError);
+      }
+
+      const { contactIds, categoryIds, action } = req.body;
+      const tenantId = req.tenantId;
+
+      if (!Array.isArray(contactIds) || contactIds.length === 0) {
+        const apiError: ApiError = {
+          error: 'IDs de contatos são obrigatórios',
+          details: 'Forneça um array de IDs'
+        };
+        return res.status(400).json(apiError);
+      }
+
+      if (!Array.isArray(categoryIds) || categoryIds.length === 0) {
+        const apiError: ApiError = {
+          error: 'IDs de categorias são obrigatórios',
+          details: 'Forneça um array de IDs'
+        };
+        return res.status(400).json(apiError);
+      }
+
+      if (!['add', 'remove'].includes(action)) {
+        const apiError: ApiError = {
+          error: 'Ação inválida',
+          details: 'Use "add" ou "remove"'
+        };
+        return res.status(400).json(apiError);
+      }
+
+      const result = await ContactService.bulkUpdateCategories(contactIds, categoryIds, action, tenantId);
+      res.json(result);
+    } catch (error) {
+      const apiError: ApiError = {
+        error: 'Erro ao atualizar categorias em massa',
+        details: error instanceof Error ? error.message : error
+      };
+      res.status(400).json(apiError);
+    }
+  }
 }

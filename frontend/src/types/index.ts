@@ -4,10 +4,20 @@ export interface Contact {
   telefone: string;
   email?: string | null;
   observacoes?: string | null;
-  categoriaId?: string | null;
-  categoria?: Category | null;
+  categoriaId?: string | null; // DEPRECATED: manter para compatibilidade
+  categoria?: Category | null; // DEPRECATED: manter para compatibilidade
+  categories?: ContactCategory[]; // Many-to-many: múltiplas categorias
   criadoEm: string;
   atualizadoEm: string;
+}
+
+export interface ContactCategory {
+  id: string;
+  contactId: string;
+  categoryId: string;
+  category: Category;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ContactInput {
@@ -15,7 +25,8 @@ export interface ContactInput {
   telefone: string;
   email?: string;
   observacoes?: string;
-  categoriaId?: string;
+  categoriaId?: string; // DEPRECATED: manter para compatibilidade
+  categoryIds?: string[]; // Array de IDs de categorias para many-to-many
 }
 
 export interface ContactsResponse {

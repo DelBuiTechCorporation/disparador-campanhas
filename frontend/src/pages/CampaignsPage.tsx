@@ -80,7 +80,18 @@ export function CampaignsPage() {
     messageContent: { sequence: [] as Array<{ type: string; content: any }> } as MessageContent,
     randomDelay: 30,
     startImmediately: true,
-    scheduledFor: ''
+    scheduledFor: '',
+    useBusinessHours: false
+  });
+
+  const [businessHours, setBusinessHours] = useState({
+    mondayEnabled: false, mondayStart: '09:00', mondayEnd: '18:00', mondayLunchStart: '', mondayLunchEnd: '',
+    tuesdayEnabled: false, tuesdayStart: '09:00', tuesdayEnd: '18:00', tuesdayLunchStart: '', tuesdayLunchEnd: '',
+    wednesdayEnabled: false, wednesdayStart: '09:00', wednesdayEnd: '18:00', wednesdayLunchStart: '', wednesdayLunchEnd: '',
+    thursdayEnabled: false, thursdayStart: '09:00', thursdayEnd: '18:00', thursdayLunchStart: '', thursdayLunchEnd: '',
+    fridayEnabled: false, fridayStart: '09:00', fridayEnd: '18:00', fridayLunchStart: '', fridayLunchEnd: '',
+    saturdayEnabled: false, saturdayStart: '09:00', saturdayEnd: '13:00', saturdayLunchStart: '', saturdayLunchEnd: '',
+    sundayEnabled: false, sundayStart: '09:00', sundayEnd: '13:00', sundayLunchStart: '', sundayLunchEnd: ''
   });
 
   useEffect(() => {
@@ -236,7 +247,8 @@ export function CampaignsPage() {
         ...formData,
         messageType: finalMessageType,
         messageContent: finalMessageContent,
-        scheduledFor: scheduledForISO
+        scheduledFor: scheduledForISO,
+        ...(formData.useBusinessHours && { businessHours })
       };
 
       const response = await authenticatedFetch('/api/campaigns', {
@@ -276,7 +288,17 @@ export function CampaignsPage() {
       messageContent: { sequence: [] },
       randomDelay: 30,
       startImmediately: true,
-      scheduledFor: ''
+      scheduledFor: '',
+      useBusinessHours: false
+    });
+    setBusinessHours({
+      mondayEnabled: false, mondayStart: '09:00', mondayEnd: '18:00', mondayLunchStart: '', mondayLunchEnd: '',
+      tuesdayEnabled: false, tuesdayStart: '09:00', tuesdayEnd: '18:00', tuesdayLunchStart: '', tuesdayLunchEnd: '',
+      wednesdayEnabled: false, wednesdayStart: '09:00', wednesdayEnd: '18:00', wednesdayLunchStart: '', wednesdayLunchEnd: '',
+      thursdayEnabled: false, thursdayStart: '09:00', thursdayEnd: '18:00', thursdayLunchStart: '', thursdayLunchEnd: '',
+      fridayEnabled: false, fridayStart: '09:00', fridayEnd: '18:00', fridayLunchStart: '', fridayLunchEnd: '',
+      saturdayEnabled: false, saturdayStart: '09:00', saturdayEnd: '13:00', saturdayLunchStart: '', saturdayLunchEnd: '',
+      sundayEnabled: false, sundayStart: '09:00', sundayEnd: '13:00', sundayLunchStart: '', sundayLunchEnd: ''
     });
     setUploadingFiles({});
     setFileInfos({});
@@ -1013,6 +1035,97 @@ export function CampaignsPage() {
                           />
                         )}
                       </div>
+                    </div>
+
+                    {/* Horário Comercial */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="block text-sm font-medium text-gray-700">
+                          ⏰ Horário Comercial
+                        </label>
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.useBusinessHours}
+                            onChange={(e) => setFormData(prev => ({ ...prev, useBusinessHours: e.target.checked }))}
+                            className="rounded text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-600">Ativar</span>
+                        </label>
+                      </div>
+                      
+                      {formData.useBusinessHours && (
+                        <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
+                          <p className="text-xs text-gray-600 mb-3">Configure os horários em que a campanha pode enviar mensagens</p>
+                          
+                          {[
+                            { key: 'monday', label: 'Segunda' },
+                            { key: 'tuesday', label: 'Terça' },
+                            { key: 'wednesday', label: 'Quarta' },
+                            { key: 'thursday', label: 'Quinta' },
+                            { key: 'friday', label: 'Sexta' },
+                            { key: 'saturday', label: 'Sábado' },
+                            { key: 'sunday', label: 'Domingo' }
+                          ].map(({ key, label }) => (
+                            <div key={key} className="bg-white border rounded-lg p-3">
+                              <label className="flex items-center space-x-2 mb-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={businessHours[`${key}Enabled` as keyof typeof businessHours] as boolean}
+                                  onChange={(e) => setBusinessHours(prev => ({ ...prev, [`${key}Enabled`]: e.target.checked }))}
+                                  className="rounded text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm font-medium text-gray-700">{label}</span>
+                              </label>
+                              
+                              {businessHours[`${key}Enabled` as keyof typeof businessHours] && (
+                                <div className="ml-6 space-y-2">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="text-xs text-gray-600">Início</label>
+                                      <input
+                                        type="time"
+                                        value={businessHours[`${key}Start` as keyof typeof businessHours] as string}
+                                        onChange={(e) => setBusinessHours(prev => ({ ...prev, [`${key}Start`]: e.target.value }))}
+                                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-xs text-gray-600">Fim</label>
+                                      <input
+                                        type="time"
+                                        value={businessHours[`${key}End` as keyof typeof businessHours] as string}
+                                        onChange={(e) => setBusinessHours(prev => ({ ...prev, [`${key}End`]: e.target.value }))}
+                                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="text-xs text-gray-600">Início Almoço (opcional)</label>
+                                      <input
+                                        type="time"
+                                        value={businessHours[`${key}LunchStart` as keyof typeof businessHours] as string}
+                                        onChange={(e) => setBusinessHours(prev => ({ ...prev, [`${key}LunchStart`]: e.target.value }))}
+                                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-xs text-gray-600">Fim Almoço (opcional)</label>
+                                      <input
+                                        type="time"
+                                        value={businessHours[`${key}LunchEnd` as keyof typeof businessHours] as string}
+                                        onChange={(e) => setBusinessHours(prev => ({ ...prev, [`${key}LunchEnd`]: e.target.value }))}
+                                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 

@@ -23,5 +23,6 @@ router.delete('/:id', ContactController.deleteContact);
 // Bulk operations
 router.post('/bulk/update', ContactController.bulkUpdateContacts);
 router.post('/bulk/delete', ContactController.bulkDeleteContacts);
+router.post('/bulk/categories', ContactController.bulkUpdateCategories);
 
 export { router as contactRoutes };

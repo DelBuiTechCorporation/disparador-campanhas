@@ -16,7 +16,8 @@ export interface ContactInput {
   email?: string;
   observacoes?: string;
   tags?: string[];
-  categoriaId?: string;
+  categoriaId?: string; // DEPRECATED: manter para compatibilidade
+  categoryIds?: string[]; // Array de IDs de categorias para many-to-many
   tenantId?: string;
 }
 

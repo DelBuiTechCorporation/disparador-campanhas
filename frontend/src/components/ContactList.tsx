@@ -125,7 +125,29 @@ export function ContactList({
                 {contact.email || '-'}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {contact.categoria ? (
+                {contact.categories && contact.categories.length > 0 ? (
+                  <div 
+                    className="flex flex-wrap gap-1 overflow-y-auto" 
+                    style={{ maxHeight: '4.5rem' }}
+                  >
+                    {contact.categories
+                      .sort((a, b) => a.category.nome.localeCompare(b.category.nome, 'pt-BR'))
+                      .map((cc) => (
+                        <span 
+                          key={cc.category.id}
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" 
+                          style={{ 
+                            color: cc.category.cor || 'var(--astra-dark-blue)', 
+                            backgroundColor: `${cc.category.cor || 'rgba(30, 58, 95, 0.1)'}15`,
+                            borderColor: cc.category.cor || 'var(--astra-dark-blue)',
+                            borderWidth: '1px'
+                          }}
+                        >
+                          {cc.category.nome}
+                        </span>
+                      ))}
+                  </div>
+                ) : contact.categoria ? (
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" style={{ color: 'var(--astra-dark-blue)', backgroundColor: 'rgba(30, 58, 95, 0.1)' }}>
                     {contact.categoria.nome}
                   </span>

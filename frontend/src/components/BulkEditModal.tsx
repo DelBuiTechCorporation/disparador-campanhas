@@ -11,15 +11,15 @@ interface BulkEditModalProps {
 }
 
 export function BulkEditModal({ isOpen, onClose, selectedContactIds, onSuccess }: BulkEditModalProps) {
-  const [categoriaId, setCategoriaId] = useState<string>('');
-  const [action, setAction] = useState<'update' | 'delete'>('update');
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+  const [action, setAction] = useState<'update' | 'add' | 'remove' | 'delete'>('add');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { categories } = useCategories();
 
   useEffect(() => {
     if (isOpen) {
-      setCategoriaId('');
-      setAction('update');
+      setSelectedCategoryIds([]);
+      setAction('add');
       setIsSubmitting(false);
     }
   }, [isOpen]);
@@ -34,23 +34,24 @@ export function BulkEditModal({ isOpen, onClose, selectedContactIds, onSuccess }
       return;
     }
 
-    if (action === 'update' && !categoriaId) {
-      toast.error('Selecione uma categoria');
+    if ((action === 'add' || action === 'remove') && selectedCategoryIds.length === 0) {
+      toast.error('Selecione pelo menos uma categoria');
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      if (action === 'update') {
-        await api.post('/contatos/bulk/update', {
+      if (action === 'add' || action === 'remove') {
+        // Implementar lógica de adicionar/remover categorias
+        await api.post('/contatos/bulk/categories', {
           contactIds: selectedContactIds,
-          updates: {
-            categoriaId: categoriaId || null,
-          },
+          categoryIds: selectedCategoryIds,
+          action: action, // 'add' ou 'remove'
         });
-        toast.success(`${selectedContactIds.length} contato(s) atualizado(s) com sucesso!`);
-      } else {
+        const verb = action === 'add' ? 'adicionadas' : 'removidas';
+        toast.success(`Categorias ${verb} em ${selectedContactIds.length} contato(s)!`);
+      } else if (action === 'delete') {
         const confirmDelete = window.confirm(
           `Tem certeza que deseja excluir ${selectedContactIds.length} contato(s)? Esta ação não pode ser desfeita.`
         );
@@ -91,34 +92,56 @@ export function BulkEditModal({ isOpen, onClose, selectedContactIds, onSuccess }
             </label>
             <select
               value={action}
-              onChange={(e) => setAction(e.target.value as 'update' | 'delete')}
+              onChange={(e) => setAction(e.target.value as 'add' | 'remove' | 'delete')}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             >
-              <option value="update">Atualizar Categoria</option>
+              <option value="add">Adicionar Categorias</option>
+              <option value="remove">Remover Categorias</option>
               <option value="delete">Excluir Contatos</option>
             </select>
           </div>
 
-          {action === 'update' && (
+          {(action === 'add' || action === 'remove') && (
             <div>
-              <label htmlFor="categoria" className="block text-sm font-medium text-gray-700 mb-2">
-                Categoria *
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Categorias * (máx. 4 visíveis, role para ver mais)
               </label>
-              <select
-                id="categoria"
-                value={categoriaId}
-                onChange={(e) => setCategoriaId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required={action === 'update'}
+              <div 
+                className="border border-gray-300 rounded-md p-3 space-y-2 max-h-48 overflow-y-auto"
+                style={{ maxHeight: '12rem' }}
               >
-                <option value="">Selecione uma categoria</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.nome}
-                  </option>
-                ))}
-              </select>
+                {categories
+                  .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+                  .map((cat) => (
+                    <label 
+                      key={cat.id} 
+                      className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCategoryIds.includes(cat.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedCategoryIds([...selectedCategoryIds, cat.id]);
+                          } else {
+                            setSelectedCategoryIds(selectedCategoryIds.filter(id => id !== cat.id));
+                          }
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                        style={{
+                          backgroundColor: cat.cor || '#6B7280',
+                          color: '#FFFFFF',
+                        }}
+                      >
+                        {cat.nome}
+                      </span>
+                    </label>
+                  ))}
+              </div>
             </div>
           )}
 

@@ -19,7 +19,8 @@ const contactSchema = z.object({
   }),
   email: z.string().email('Email inválido').optional().or(z.literal('')),
   observacoes: z.string().optional(),
-  categoriaId: z.string().optional(),
+  categoriaId: z.string().optional(), // DEPRECATED: manter para compatibilidade
+  categoryIds: z.array(z.string()).optional(), // Array de IDs de categorias
 });
 
 type ContactFormData = z.infer<typeof contactSchema>;
@@ -33,6 +34,7 @@ interface ContactFormProps {
 export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
 
   const {
     register,
@@ -48,6 +50,7 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
       email: contact?.email || '',
       observacoes: contact?.observacoes || '',
       categoriaId: contact?.categoriaId || '',
+      categoryIds: contact?.categories?.map(cc => cc.categoryId) || [],
     },
   });
 
@@ -59,8 +62,11 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
   useEffect(() => {
     if (contact && !loadingCategories) {
       console.log('🔄 Resetting form with contact:', contact);
-      console.log('📋 categoriaId from contact:', contact.categoriaId);
+      console.log('📋 categories from contact:', contact.categories);
       console.log('📦 Categories loaded:', categories.length);
+
+      const categoryIds = contact.categories?.map(cc => cc.categoryId) || [];
+      setSelectedCategoryIds(categoryIds);
 
       reset({
         nome: contact.nome || '',
@@ -68,15 +74,11 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
         email: contact.email || '',
         observacoes: contact.observacoes || '',
         categoriaId: contact.categoriaId || '',
+        categoryIds: categoryIds,
       });
 
-      // Força o setValue após reset para garantir que o select seja atualizado
-      setTimeout(() => {
-        if (contact.categoriaId) {
-          setValue('categoriaId', contact.categoriaId);
-          console.log('✅ setValue categoriaId:', contact.categoriaId);
-        }
-      }, 100);
+      setValue('categoryIds', categoryIds);
+      console.log('✅ setValue categoryIds:', categoryIds);
     }
   }, [contact, categories, loadingCategories, reset, setValue]);
 
@@ -98,7 +100,8 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
         telefone: data.telefone,
         email: data.email || undefined,
         observacoes: data.observacoes || undefined,
-        categoriaId: data.categoriaId || undefined,
+        categoriaId: data.categoriaId || undefined, // DEPRECATED: manter para compatibilidade
+        categoryIds: selectedCategoryIds.length > 0 ? selectedCategoryIds : undefined,
       };
 
       if (contact) {
@@ -199,26 +202,45 @@ export function ContactForm({ contact, onSuccess, onCancel }: ContactFormProps) 
 
 
           <div>
-            <label htmlFor="categoriaId" className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1.5 sm:mb-2">
-              Categoria
+            <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1.5 sm:mb-2">
+              Categorias (múltipla seleção)
             </label>
-            <select
-              id="categoriaId"
-              {...register('categoriaId')}
-              className="input-field text-sm sm:text-base"
-              disabled={loadingCategories}
-            >
-              <option value="">Selecione uma categoria</option>
-              {loadingCategories ? (
-                <option disabled>Carregando categorias...</option>
-              ) : (
-                categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.nome}
-                  </option>
-                ))
-              )}
-            </select>
+            {loadingCategories ? (
+              <div className="text-sm text-gray-500">Carregando categorias...</div>
+            ) : categories.length === 0 ? (
+              <div className="text-sm text-gray-500">Nenhuma categoria disponível</div>
+            ) : (
+              <div className="border border-gray-300 rounded-xl p-3 max-h-48 overflow-y-auto space-y-2">
+                {categories.map((category) => {
+                  const isSelected = selectedCategoryIds.includes(category.id);
+                  return (
+                    <label
+                      key={category.id}
+                      className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          const newSelected = e.target.checked
+                            ? [...selectedCategoryIds, category.id]
+                            : selectedCategoryIds.filter(id => id !== category.id);
+                          setSelectedCategoryIds(newSelected);
+                          setValue('categoryIds', newSelected);
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="text-sm font-medium text-gray-700">{category.nome}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            {selectedCategoryIds.length > 0 && (
+              <div className="mt-2 text-xs text-gray-500">
+                {selectedCategoryIds.length} categoria(s) selecionada(s)
+              </div>
+            )}
           </div>
 
           <div>

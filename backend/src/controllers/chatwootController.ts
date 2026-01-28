@@ -7,9 +7,11 @@ const chatwootService = new ChatwootService();
 // POST /api/chatwoot/import - Importar contatos por tags
 export const importContactsByTags = async (req: AuthenticatedRequest, res: Response) => {
   try {
+    console.log('📥 POST /api/chatwoot/import - Iniciando importação...');
     const { tagMappings } = req.body;
 
     if (!tagMappings || !Array.isArray(tagMappings) || tagMappings.length === 0) {
+      console.log('❌ Tag mappings inválidos ou vazios');
       return res.status(400).json({
         error: 'Tag mappings são obrigatórios',
         message: 'Envie um array de { chatwootTag, categoryId }'
@@ -24,6 +26,7 @@ export const importContactsByTags = async (req: AuthenticatedRequest, res: Respo
     }
     
     if (!tenantId) {
+      console.log('❌ TenantID não encontrado');
       return res.status(400).json({ 
         error: 'TenantID não encontrado',
         message: 'SUPERADMIN deve fornecer tenantId no body'
@@ -38,6 +41,7 @@ export const importContactsByTags = async (req: AuthenticatedRequest, res: Respo
     
     const result = await chatwootService.syncContacts(tenantId, tagMappings);
 
+    console.log(`✅ Importação concluída - Enviando resposta JSON`);
     res.json({
       success: true,
       data: result,
@@ -45,7 +49,7 @@ export const importContactsByTags = async (req: AuthenticatedRequest, res: Respo
     });
 
   } catch (error: any) {
-    console.error('Erro ao importar contatos:', error);
+    console.error('❌ Erro ao importar contatos:', error);
     res.status(500).json({
       error: 'Erro ao importar contatos',
       message: error.message
@@ -144,7 +148,7 @@ export const streamChatwootTags = async (req: AuthenticatedRequest, res: Respons
 };
 
 
-// DELETE /api/chatwoot/cache - Limpar cache de conversas
+// DELETE /api/chatwoot/cache - Limpar cache de contatos
 export const clearChatwootCache = async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Para SUPERADMIN, permitir tenantId via body

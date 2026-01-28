@@ -148,6 +148,13 @@ app.use('/api/notifications', authMiddleware, notificationsRoutes); // User noti
 app.use('/api/templates', authMiddleware, messageTemplatesRoutes); // Message templates system
 app.use('/api/reports', authMiddleware, reportsRoutes); // Advanced reporting system
 app.use('/api/automation', authMiddleware, automationRoutes); // Automation and workflow system
+
+// Middleware de log para debug do Chatwoot
+app.use('/api/chatwoot', (req, res, next) => {
+  console.log(`🔍 [CHATWOOT] ${req.method} ${req.path} - ContentType: ${req.headers['content-type']}`);
+  next();
+});
+
 app.use('/api/chatwoot', authMiddleware, chatwootRoutes); // Chatwoot integration
 // app.use('/api/integrations', integrationsRoutes); // External API integrations system
 // app.use('/api/cache', cacheRoutes); // Cache management and monitoring

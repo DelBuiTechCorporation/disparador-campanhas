@@ -59,22 +59,7 @@ function saveContacts(contacts: any[]): void {
 }
 
 // Removido cache em memória - sempre ler do arquivo para consistência entre instâncias
-
-async function enrichContactsWithCategories(contactsList: any[]): Promise<any[]> {
-  try {
-    const categories = await CategoryService.getAllCategories();
-    return contactsList.map(contact => {
-      if (contact.categoriaId) {
-        const categoria = categories.find(cat => cat.id === contact.categoriaId);
-        return { ...contact, categoria };
-      }
-      return { ...contact, categoria: null };
-    });
-  } catch (error) {
-    console.error('Erro ao buscar categorias:', error);
-    return contactsList.map(contact => ({ ...contact, categoria: null }));
-  }
-}
+// DEPRECATED: enrichContactsWithCategories não é mais necessário - categories vem via Prisma include
 
 export class ContactService {
   static normalizePhone(phone: string): string {
@@ -103,9 +88,13 @@ export class ContactService {
         where.tenantId = tenantId;
       }
 
-      // Filtro por categoria/tag
+      // Filtro por categoria/tag (usando tabela de junção many-to-many)
       if (tag) {
-        where.categoriaId = tag;
+        where.categories = {
+          some: {
+            categoryId: tag
+          }
+        };
       }
 
       // Filtro de busca
@@ -129,7 +118,12 @@ export class ContactService {
         take: pageSize,
         orderBy: { criadoEm: 'desc' },
         include: {
-          categoria: true
+          categoria: true, // DEPRECATED: manter para compatibilidade
+          categories: {
+            include: {
+              category: true
+            }
+          }
         }
       });
 
@@ -160,7 +154,12 @@ export class ContactService {
       const contact = await prisma.contact.findFirst({
         where,
         include: {
-          categoria: true
+          categoria: true, // DEPRECATED: manter para compatibilidade
+          categories: {
+            include: {
+              category: true
+            }
+          }
         }
       });
 
@@ -187,16 +186,47 @@ export class ContactService {
           email: data.email || null,
           observacoes: data.observacoes || null,
           tags: data.tags || [],
-          categoriaId: data.categoriaId || null,
+          categoriaId: data.categoriaId || null, // DEPRECATED: manter para compatibilidade
           tenantId: data.tenantId || null
         },
         include: {
-          categoria: true
+          categoria: true,
+          categories: {
+            include: {
+              category: true
+            }
+          }
         }
       });
 
+      // Se categoryIds foram fornecidos, criar associações
+      if (data.categoryIds && data.categoryIds.length > 0) {
+        await prisma.contactCategory.createMany({
+          data: data.categoryIds.map(categoryId => ({
+            contactId: newContact.id,
+            categoryId: categoryId
+          })),
+          skipDuplicates: true
+        });
+        console.log(`✅ ${data.categoryIds.length} categoria(s) associada(s) ao contato`);
+      }
+
       console.log('✅ ContactService.createContact - contato criado:', newContact.id);
-      return newContact;
+      
+      // Recarregar contato com categorias atualizadas
+      const contactWithCategories = await prisma.contact.findUnique({
+        where: { id: newContact.id },
+        include: {
+          categoria: true,
+          categories: {
+            include: {
+              category: true
+            }
+          }
+        }
+      });
+      
+      return contactWithCategories;
     } catch (error) {
       console.error('❌ ContactService.createContact - erro:', error);
       throw error;
@@ -219,6 +249,7 @@ export class ContactService {
         throw new Error('Contato não encontrado');
       }
 
+      // Atualizar dados básicos do contato
       const updatedContact = await prisma.contact.update({
         where: { id },
         data: {
@@ -227,12 +258,44 @@ export class ContactService {
           email: data.email || null,
           observacoes: data.observacoes || null,
           tags: data.tags || [],
-          categoriaId: data.categoriaId || null
-        },
-        include: {
-          categoria: true
+          categoriaId: data.categoriaId || null // DEPRECATED: manter para compatibilidade
         }
       });
+
+      // Se categoryIds foram fornecidos, atualizar associações
+      if (data.categoryIds !== undefined) {
+        // Remover associações antigas
+        await prisma.contactCategory.deleteMany({
+          where: { contactId: id }
+        });
+
+        // Criar novas associações
+        if (data.categoryIds.length > 0) {
+          await prisma.contactCategory.createMany({
+            data: data.categoryIds.map(categoryId => ({
+              contactId: id,
+              categoryId: categoryId
+            })),
+            skipDuplicates: true
+          });
+          console.log(`✅ ${data.categoryIds.length} categoria(s) associada(s) ao contato`);
+        }
+      }
+
+      // Recarregar contato com categorias atualizadas
+      const contactWithCategories = await prisma.contact.findUnique({
+        where: { id },
+        include: {
+          categoria: true,
+          categories: {
+            include: {
+              category: true
+            }
+          }
+        }
+      });
+
+      return contactWithCategories;
 
       console.log('✅ ContactService.updateContact - contato atualizado:', id);
       return updatedContact;
@@ -344,6 +407,74 @@ export class ContactService {
       };
     } catch (error) {
       console.error('❌ ContactService.bulkDeleteContacts - erro:', error);
+      throw error;
+    }
+  }
+
+  static async bulkUpdateCategories(
+    contactIds: string[], 
+    categoryIds: string[], 
+    action: 'add' | 'remove', 
+    tenantId?: string
+  ) {
+    try {
+      console.log(`📝 ContactService.bulkUpdateCategories - ${action} - IDs:`, contactIds.length, 'categories:', categoryIds.length);
+
+      // Verificar se os contatos pertencem ao tenant
+      const where: any = {
+        id: { in: contactIds }
+      };
+      if (tenantId) {
+        where.tenantId = tenantId;
+      }
+
+      const existingContacts = await prisma.contact.findMany({ 
+        where,
+        select: { id: true }
+      });
+
+      if (existingContacts.length === 0) {
+        throw new Error('Nenhum contato encontrado');
+      }
+
+      const validContactIds = existingContacts.map(c => c.id);
+
+      if (action === 'add') {
+        // Adicionar categorias (evitar duplicatas)
+        const contactCategoryPairs = validContactIds.flatMap(contactId =>
+          categoryIds.map(categoryId => ({
+            contactId,
+            categoryId
+          }))
+        );
+
+        await prisma.contactCategory.createMany({
+          data: contactCategoryPairs,
+          skipDuplicates: true
+        });
+
+        console.log(`✅ ContactService.bulkUpdateCategories - categorias adicionadas a ${validContactIds.length} contato(s)`);
+        return {
+          message: `Categorias adicionadas a ${validContactIds.length} contato(s)`,
+          count: validContactIds.length
+        };
+      } else {
+        // Remover categorias
+        const result = await prisma.contactCategory.deleteMany({
+          where: {
+            contactId: { in: validContactIds },
+            categoryId: { in: categoryIds }
+          }
+        });
+
+        console.log(`✅ ContactService.bulkUpdateCategories - ${result.count} associações removidas`);
+        return {
+          message: `Categorias removidas de ${validContactIds.length} contato(s)`,
+          count: result.count
+        };
+      }
+    } catch (error) {
+      console.error('❌ ContactService.bulkUpdateCategories - erro:', error);
       throw error;
     }
   }
