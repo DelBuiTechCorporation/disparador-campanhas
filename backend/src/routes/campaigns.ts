@@ -11,7 +11,8 @@ import {
   getContactTags,
   getActiveSessions,
   setBusinessHours,
-  getBusinessHours,
+  getBusinessHours as getBusinessHoursOriginal,
+  updateBusinessHours,
   checkBusinessHours,
   getPendingMessages,
   updatePendingMessages,
@@ -39,8 +40,8 @@ router.delete('/:id', authMiddleware, deleteCampaign);
 router.patch('/:id/toggle', authMiddleware, toggleCampaign);
 
 // Business hours routes
-router.put('/:id/business-hours', authMiddleware, setBusinessHours);
-router.get('/:id/business-hours', authMiddleware, getBusinessHours);
+router.get('/:id/business-hours', authMiddleware, getBusinessHoursOriginal);
+router.put('/:id/business-hours', authMiddleware, updateBusinessHours);
 router.get('/:id/business-hours/check', authMiddleware, checkBusinessHours);
 
 export default router;

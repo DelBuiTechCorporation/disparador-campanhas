@@ -1117,3 +1117,100 @@ export const downloadCampaignReport = async (req: AuthenticatedRequest, res: Res
     res.status(500).json({ error: 'Erro ao gerar relatório XLSX' });
   }
 };
+// Get business hours for a campaign
+export const getBusinessHours = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.tenantId;
+
+    // Verificar se campanha existe e pertence ao tenant
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        id,
+        ...(tenantId && { tenantId })
+      },
+      include: {
+        businessHours: true
+      }
+    });
+
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada' });
+    }
+
+    res.json({ 
+      success: true,
+      businessHours: campaign.businessHours 
+    });
+  } catch (error) {
+    console.error('Erro ao buscar horário comercial:', error);
+    res.status(500).json({ error: 'Erro ao buscar horário comercial' });
+  }
+};
+
+// Update business hours for a campaign
+export const updateBusinessHours = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { businessHours } = req.body;
+    const tenantId = req.tenantId;
+
+    if (!businessHours) {
+      return res.status(400).json({ error: 'businessHours é obrigatório' });
+    }
+
+    // Verificar se campanha existe e pertence ao tenant
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        id,
+        ...(tenantId && { tenantId })
+      }
+    });
+
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada' });
+    }
+
+    // Não permitir edição de campanhas encerradas
+    if (campaign.status === 'COMPLETED' || campaign.status === 'FAILED' || campaign.status === 'CANCELLED') {
+      return res.status(400).json({ 
+        error: 'Não é possível editar horário comercial de campanhas encerradas' 
+      });
+    }
+
+    // Verificar se já existe businessHours
+    const existing = await prisma.businessHours.findUnique({
+      where: { campaignId: id }
+    });
+
+    if (existing) {
+      // Atualizar
+      await prisma.businessHours.update({
+        where: { campaignId: id },
+        data: {
+          ...businessHours,
+          tenantId
+        }
+      });
+    } else {
+      // Criar
+      await prisma.businessHours.create({
+        data: {
+          campaignId: id,
+          tenantId,
+          ...businessHours
+        }
+      });
+    }
+
+    console.log(`✅ Horário comercial atualizado para campanha ${campaign.nome}`);
+    
+    res.json({ 
+      success: true,
+      message: 'Horário comercial atualizado com sucesso' 
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar horário comercial:', error);
+    res.status(500).json({ error: 'Erro ao atualizar horário comercial' });
+  }
+};

@@ -69,6 +69,23 @@ export function CampaignsPage() {
   const [uploadingFiles, setUploadingFiles] = useState<{ [key: number]: boolean }>({});
   const [fileInfos, setFileInfos] = useState<{ [key: number]: { name: string, size: number, type: string } }>({});
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  
+  // Filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  
+  // Edit business hours modal
+  const [showEditBusinessHoursModal, setShowEditBusinessHoursModal] = useState(false);
+  const [selectedCampaignForEdit, setSelectedCampaignForEdit] = useState<Campaign | null>(null);
+  const [editBusinessHours, setEditBusinessHours] = useState({
+    mondayEnabled: false, mondayStart: '09:00', mondayEnd: '18:00', mondayLunchStart: '', mondayLunchEnd: '',
+    tuesdayEnabled: false, tuesdayStart: '09:00', tuesdayEnd: '18:00', tuesdayLunchStart: '', tuesdayLunchEnd: '',
+    wednesdayEnabled: false, wednesdayStart: '09:00', wednesdayEnd: '18:00', wednesdayLunchStart: '', wednesdayLunchEnd: '',
+    thursdayEnabled: false, thursdayStart: '09:00', thursdayEnd: '18:00', thursdayLunchStart: '', thursdayLunchEnd: '',
+    fridayEnabled: false, fridayStart: '09:00', fridayEnd: '18:00', fridayLunchStart: '', fridayLunchEnd: '',
+    saturdayEnabled: false, saturdayStart: '09:00', saturdayEnd: '13:00', saturdayLunchStart: '', saturdayLunchEnd: '',
+    sundayEnabled: false, sundayStart: '09:00', sundayEnd: '13:00', sundayLunchStart: '', sundayLunchEnd: ''
+  });
 
   // Form states
   const [formData, setFormData] = useState({
@@ -517,6 +534,56 @@ export function CampaignsPage() {
     }
   };
 
+  const handleOpenEditBusinessHours = async (campaign: Campaign) => {
+    if (campaign.status === 'COMPLETED' || campaign.status === 'FAILED' || campaign.status === 'CANCELLED') {
+      toast.error('Não é possível editar horário comercial de campanhas encerradas');
+      return;
+    }
+
+    setSelectedCampaignForEdit(campaign);
+    
+    // Buscar horário comercial atual da campanha
+    try {
+      const response = await authenticatedFetch(`/api/campaigns/${campaign.id}/business-hours`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.businessHours) {
+          setEditBusinessHours(data.businessHours);
+        }
+      }
+    } catch (error) {
+      console.log('Nenhum horário comercial configurado para esta campanha');
+    }
+    
+    setShowEditBusinessHoursModal(true);
+  };
+
+  const handleSaveBusinessHours = async () => {
+    if (!selectedCampaignForEdit) return;
+
+    try {
+      toast.loading('Salvando horário comercial...', { id: 'save-bh' });
+      
+      const response = await authenticatedFetch(`/api/campaigns/${selectedCampaignForEdit.id}/business-hours`, {
+        method: 'PUT',
+        body: JSON.stringify({ businessHours: editBusinessHours })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Erro ao salvar');
+      }
+
+      toast.success('Horário comercial atualizado!', { id: 'save-bh' });
+      setShowEditBusinessHoursModal(false);
+      setSelectedCampaignForEdit(null);
+      loadCampaigns();
+    } catch (error: any) {
+      console.error('Erro ao salvar horário comercial:', error);
+      toast.error(error.message || 'Erro ao salvar horário comercial', { id: 'save-bh' });
+    }
+  };
+
   const handleViewReport = async (campaignId: string) => {
     setCurrentReportCampaignId(campaignId);
     setReportCurrentPage(1);
@@ -731,16 +798,57 @@ export function CampaignsPage() {
       <div className="p-6 space-y-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900">Campanhas Criadas</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900">Campanhas Criadas</h3>
+              
+              {/* Filtros */}
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Buscar por nome..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">Todos os status</option>
+                  <option value="PENDING">Aguardando</option>
+                  <option value="RUNNING">Em execução</option>
+                  <option value="PAUSED">Pausada</option>
+                  <option value="COMPLETED">Concluída</option>
+                  <option value="FAILED">Falhada</option>
+                  <option value="CANCELLED">Cancelada</option>
+                </select>
+              </div>
+            </div>
           </div>
 
-          {campaigns.length === 0 ? (
-            <div className="p-6 text-center text-gray-500">
-              Nenhuma campanha encontrada. Crie sua primeira campanha para começar.
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-200">
-              {campaigns.map((campaign) => (
+          {(() => {
+            // Aplicar filtros
+            const filtered = campaigns.filter(campaign => {
+              const matchesSearch = campaign.nome.toLowerCase().includes(searchTerm.toLowerCase());
+              const matchesStatus = statusFilter === 'all' || campaign.status === statusFilter;
+              return matchesSearch && matchesStatus;
+            });
+
+            if (filtered.length === 0) {
+              return (
+                <div className="p-6 text-center text-gray-500">
+                  {campaigns.length === 0 
+                    ? 'Nenhuma campanha encontrada. Crie sua primeira campanha para começar.'
+                    : 'Nenhuma campanha encontrada com os filtros aplicados.'
+                  }
+                </div>
+              );
+            }
+
+            return (
+              <div className="divide-y divide-gray-200">
+                {filtered.map((campaign) => (
                 <div key={campaign.id} className="px-6 py-3 h-[60px] flex items-center">
                   <div className="flex items-center justify-between w-full">
                     {/* Nome e Status */}
@@ -825,12 +933,24 @@ export function CampaignsPage() {
                           </svg>
                         </button>
                       )}
+                      {(campaign.status === 'RUNNING' || campaign.status === 'PAUSED') && (
+                        <button
+                          onClick={() => handleOpenEditBusinessHours(campaign)}
+                          className="px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700"
+                          title="Editar horário comercial"
+                        >
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* Modal de Criação */}
@@ -2555,6 +2675,124 @@ export function CampaignsPage() {
               </div>
             </div>
           </div>
+          </Portal>
+        )}
+
+        {/* Modal de Edição de Horário Comercial */}
+        {showEditBusinessHoursModal && selectedCampaignForEdit && (
+          <Portal>
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ zIndex: 9999 }}>
+              <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center p-6 border-b bg-gradient-to-r from-purple-50 to-indigo-50">
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900">⏰ Editar Horário Comercial</h3>
+                    <p className="text-sm text-gray-600 mt-1">Campanha: {selectedCampaignForEdit.nome}</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowEditBusinessHoursModal(false);
+                      setSelectedCampaignForEdit(null);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-full transition-colors"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="p-6">
+                  <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
+                    <p className="text-xs text-gray-600 mb-3">Configure os horários em que a campanha pode enviar mensagens</p>
+                    
+                    {[
+                      { key: 'monday', label: 'Segunda' },
+                      { key: 'tuesday', label: 'Terça' },
+                      { key: 'wednesday', label: 'Quarta' },
+                      { key: 'thursday', label: 'Quinta' },
+                      { key: 'friday', label: 'Sexta' },
+                      { key: 'saturday', label: 'Sábado' },
+                      { key: 'sunday', label: 'Domingo' }
+                    ].map(({ key, label }) => (
+                      <div key={key} className="bg-white border rounded-lg p-3">
+                        <label className="flex items-center space-x-2 mb-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editBusinessHours[`${key}Enabled` as keyof typeof editBusinessHours] as boolean}
+                            onChange={(e) => setEditBusinessHours(prev => ({ ...prev, [`${key}Enabled`]: e.target.checked }))}
+                            className="rounded text-purple-600 focus:ring-purple-500"
+                          />
+                          <span className="text-sm font-medium text-gray-700">{label}</span>
+                        </label>
+                        
+                        {editBusinessHours[`${key}Enabled` as keyof typeof editBusinessHours] && (
+                          <div className="ml-6 space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-xs text-gray-600">Início</label>
+                                <input
+                                  type="time"
+                                  value={editBusinessHours[`${key}Start` as keyof typeof editBusinessHours] as string}
+                                  onChange={(e) => setEditBusinessHours(prev => ({ ...prev, [`${key}Start`]: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-purple-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-600">Fim</label>
+                                <input
+                                  type="time"
+                                  value={editBusinessHours[`${key}End` as keyof typeof editBusinessHours] as string}
+                                  onChange={(e) => setEditBusinessHours(prev => ({ ...prev, [`${key}End`]: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-purple-500"
+                                />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-xs text-gray-600">Início Almoço (opcional)</label>
+                                <input
+                                  type="time"
+                                  value={editBusinessHours[`${key}LunchStart` as keyof typeof editBusinessHours] as string}
+                                  onChange={(e) => setEditBusinessHours(prev => ({ ...prev, [`${key}LunchStart`]: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-purple-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-600">Fim Almoço (opcional)</label>
+                                <input
+                                  type="time"
+                                  value={editBusinessHours[`${key}LunchEnd` as keyof typeof editBusinessHours] as string}
+                                  onChange={(e) => setEditBusinessHours(prev => ({ ...prev, [`${key}LunchEnd`]: e.target.value }))}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-purple-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button
+                      onClick={() => {
+                        setShowEditBusinessHoursModal(false);
+                        setSelectedCampaignForEdit(null);
+                      }}
+                      className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleSaveBusinessHours}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium"
+                    >
+                      Salvar Horário Comercial
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </Portal>
         )}
       </div>
