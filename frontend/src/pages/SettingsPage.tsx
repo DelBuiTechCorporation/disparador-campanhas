@@ -15,6 +15,13 @@ interface Settings {
   chatwootApiToken?: string;
 }
 
+interface ChatwootAccount {
+  id: number;
+  name: string;
+  role: string;
+  status: string;
+}
+
 const settingsSchema = z.object({
   openaiApiKey: z.string().optional(),
   groqApiKey: z.string().optional(),
@@ -29,6 +36,9 @@ export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeModal, setActiveModal] = useState<'openai' | 'groq' | 'chatwoot' | null>(null);
+  const [validatingToken, setValidatingToken] = useState(false);
+  const [tokenValidated, setTokenValidated] = useState(false);
+  const [availableAccounts, setAvailableAccounts] = useState<ChatwootAccount[]>([]);
   const { user } = useAuth();
 
   // Helper para fazer requisições autenticadas
@@ -184,6 +194,60 @@ export function SettingsPage() {
       console.error('Erro ao remover integração:', error);
       toast.error('Erro ao remover integração');
     }
+  };
+
+  const validateChatwootToken = async () => {
+    const url = (document.getElementById('chatwootUrl') as HTMLInputElement)?.value;
+    const token = (document.getElementById('chatwootApiToken') as HTMLInputElement)?.value;
+
+    if (!url || !token) {
+      toast.error('Preencha a URL e o Token antes de validar');
+      return;
+    }
+
+    setValidatingToken(true);
+    setTokenValidated(false);
+    setAvailableAccounts([]);
+
+    try {
+      const response = await authenticatedFetch('/api/chatwoot/validate-token', {
+        method: 'POST',
+        body: JSON.stringify({
+          chatwootUrl: url,
+          chatwootApiToken: token
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setTokenValidated(true);
+        setAvailableAccounts(data.data.accounts || []);
+        toast.success(data.message || 'Token validado com sucesso!');
+        
+        // Se houver apenas uma account, selecionar automaticamente
+        if (data.data.accounts.length === 1) {
+          setValue('chatwootAccountId', String(data.data.accounts[0].id));
+        }
+      } else {
+        toast.error(data.message || 'Token inválido ou URL incorreta');
+        setTokenValidated(false);
+        setAvailableAccounts([]);
+      }
+    } catch (error) {
+      console.error('Erro ao validar token:', error);
+      toast.error('Erro ao validar token. Verifique a URL e tente novamente.');
+      setTokenValidated(false);
+      setAvailableAccounts([]);
+    } finally {
+      setValidatingToken(false);
+    }
+  };
+
+  const handleModalClose = () => {
+    setActiveModal(null);
+    setTokenValidated(false);
+    setAvailableAccounts([]);
   };
 
 
@@ -464,7 +528,7 @@ export function SettingsPage() {
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-900">💬 Configurar Chatwoot</h3>
               <button
-                onClick={() => setActiveModal(null)}
+                onClick={handleModalClose}
                 className="text-gray-400 hover:text-gray-600"
               >
                 ✕
@@ -482,6 +546,10 @@ export function SettingsPage() {
                   {...register('chatwootUrl')}
                   placeholder="https://app.chatwoot.com"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={() => {
+                    setTokenValidated(false);
+                    setAvailableAccounts([]);
+                  }}
                 />
                 {errors.chatwootUrl && (
                   <p className="text-red-500 text-sm mt-1">
@@ -490,27 +558,6 @@ export function SettingsPage() {
                 )}
                 <p className="text-xs text-gray-500 mt-1">
                   URL completa da sua instância Chatwoot
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor="chatwootAccountId" className="block text-sm font-medium text-gray-700 mb-1">
-                  ID da Conta *
-                </label>
-                <input
-                  id="chatwootAccountId"
-                  type="text"
-                  {...register('chatwootAccountId')}
-                  placeholder="123456"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                {errors.chatwootAccountId && (
-                  <p className="text-red-500 text-sm mt-1">
-                    {errors.chatwootAccountId.message}
-                  </p>
-                )}
-                <p className="text-xs text-gray-500 mt-1">
-                  ID numérico da sua conta no Chatwoot
                 </p>
               </div>
 
@@ -524,6 +571,10 @@ export function SettingsPage() {
                   {...register('chatwootApiToken')}
                   placeholder="••••••••••••••••"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={() => {
+                    setTokenValidated(false);
+                    setAvailableAccounts([]);
+                  }}
                 />
                 {errors.chatwootApiToken && (
                   <p className="text-red-500 text-sm mt-1">
@@ -535,10 +586,67 @@ export function SettingsPage() {
                 </p>
               </div>
 
+              {/* Botão para validar token */}
+              <button
+                type="button"
+                onClick={validateChatwootToken}
+                disabled={validatingToken}
+                className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {validatingToken ? 'Validando...' : '🔑 Validar Token'}
+              </button>
+
+              {/* Seletor de Accounts - aparece após validação */}
+              {tokenValidated && availableAccounts.length > 0 && (
+                <div>
+                  <label htmlFor="chatwootAccountId" className="block text-sm font-medium text-gray-700 mb-1">
+                    Selecione a Conta *
+                  </label>
+                  <select
+                    id="chatwootAccountId"
+                    {...register('chatwootAccountId')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Selecione uma conta...</option>
+                    {availableAccounts.map(account => (
+                      <option key={account.id} value={String(account.id)}>
+                        {account.name} ({account.role})
+                      </option>
+                    ))}
+                  </select>
+                  {errors.chatwootAccountId && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.chatwootAccountId.message}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">
+                    Selecione a conta do Chatwoot para integrar
+                  </p>
+                </div>
+              )}
+
+              {/* Mensagem se validado mas sem accounts */}
+              {tokenValidated && availableAccounts.length === 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                  <p className="text-sm text-yellow-800">
+                    ⚠️ Token validado, mas nenhuma conta foi encontrada.
+                  </p>
+                </div>
+              )}
+
+              {/* Mensagem de validação necessária */}
+              {!tokenValidated && (
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                  <p className="text-sm text-blue-800">
+                    ℹ️ Preencha a URL e o Token, depois clique em "Validar Token" para continuar.
+                  </p>
+                </div>
+              )}
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => setActiveModal(null)}
+                  onClick={handleModalClose}
                   className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                 >
                   Cancelar
@@ -555,8 +663,8 @@ export function SettingsPage() {
                 )}
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  disabled={isSubmitting || !tokenValidated || !availableAccounts.length}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? 'Salvando...' : 'Salvar'}
                 </button>

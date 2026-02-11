@@ -181,3 +181,75 @@ export const clearChatwootCache = async (req: AuthenticatedRequest, res: Respons
   }
 };
 
+// POST /api/chatwoot/validate-token - Validar token e buscar accounts disponíveis
+export const validateChatwootToken = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    console.log('🔑 POST /api/chatwoot/validate-token - Validando token...');
+    const { chatwootUrl, chatwootApiToken } = req.body;
+
+    if (!chatwootUrl || !chatwootApiToken) {
+      console.log('❌ URL ou token não fornecidos');
+      return res.status(400).json({
+        success: false,
+        message: 'URL do Chatwoot e Token de API são obrigatórios'
+      });
+    }
+
+    // Validar formato da URL
+    try {
+      new URL(chatwootUrl);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'URL do Chatwoot inválida'
+      });
+    }
+
+    // Buscar perfil do usuário e accounts disponíveis
+    const profileUrl = `${chatwootUrl}/api/v1/profile`;
+    console.log(`🌐 Validando token em: ${profileUrl}`);
+
+    const response = await fetch(profileUrl, {
+      headers: {
+        'api_access_token': chatwootApiToken
+      }
+    });
+
+    if (!response.ok) {
+      console.log(`❌ Erro ao validar token: ${response.status}`);
+      return res.status(400).json({
+        success: false,
+        message: 'Token inválido ou URL incorreta'
+      });
+    }
+
+    const profileData: any = await response.json();
+    console.log(`✅ Token válido - ${profileData.accounts?.length || 0} account(s) encontrada(s)`);
+
+    // Extrair accounts disponíveis
+    const accounts = (profileData.accounts || []).map((account: any) => ({
+      id: account.id,
+      name: account.name,
+      role: account.role,
+      status: account.status
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        userName: profileData.name || profileData.display_name || profileData.email,
+        email: profileData.email,
+        accounts: accounts
+      },
+      message: `${accounts.length} conta(s) disponível(is)`
+    });
+
+  } catch (error: any) {
+    console.error('❌ Erro ao validar token Chatwoot:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao validar token. Verifique a URL e tente novamente.',
+      error: error.message
+    });
+  }
+};
