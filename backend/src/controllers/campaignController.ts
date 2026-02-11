@@ -224,19 +224,30 @@ export const createCampaign = async (req: AuthenticatedRequest, res: Response) =
     // Buscar contatos usando ContactService com tenant isolation
     const tenantId = req.tenantId;
 
-    // Buscar contatos que pertencem às categorias selecionadas
-    const whereContacts: any = {
-      categoriaId: { in: targetTags },
-      tenantId: tenantId
-    };
-
+    // Buscar contatos que pertencem às categorias selecionadas (many-to-many)
     const filteredContacts = await prisma.contact.findMany({
-      where: whereContacts,
+      where: {
+        tenantId: tenantId,
+        categories: {
+          some: {
+            categoryId: { in: targetTags }
+          }
+        }
+      },
       select: {
         id: true,
         nome: true,
         telefone: true,
-        categoriaId: true
+        categories: {
+          select: {
+            category: {
+              select: {
+                id: true,
+                nome: true
+              }
+            }
+          }
+        }
       }
     });
 

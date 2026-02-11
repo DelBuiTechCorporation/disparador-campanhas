@@ -9,18 +9,29 @@ O sistema suporta **dois modos** de buscar contatos do Chatwoot:
 
 ## 🚀 Como Ativar o Acesso Direto
 
-### Passo 1: Configurar Variável de Ambiente
+### Passo 1: Configurar Variáveis de Ambiente
 
 Adicione no arquivo `.env`:
 
 ```bash
+# URL de conexão ao banco PostgreSQL do Chatwoot
 PG_CHATWOOT_URL=postgresql://user:password@host:port/database
+
+# URL base do Chatwoot que pode usar acesso direto (opcional)
+# Se não configurado, o acesso direto não será usado mesmo com PG_CHATWOOT_URL
+CHATWOOT_BASE_URL=seu-dominio.com.br
 ```
 
 **Exemplo:**
 ```bash
-PG_CHATWOOT_URL=postgresql://chatwoot:senha123@localhost:5432/chatwoot_production
+PG_CHATWOOT_URL=postgresql://chatwoot:senha123@129.153.128.240:5434/iago?schema=iago
+CHATWOOT_BASE_URL=iago.5xaceleradora.com.br
 ```
+
+**Importante:** O acesso direto só será usado se:
+- `PG_CHATWOOT_URL` estiver configurado
+- `CHATWOOT_BASE_URL` estiver configurado
+- A URL do Chatwoot configurada no tenant **contenha** o valor de `CHATWOOT_BASE_URL`
 
 ### Passo 2: Reiniciar o Backend
 

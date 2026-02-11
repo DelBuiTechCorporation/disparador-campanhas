@@ -699,13 +699,23 @@ export class ChatwootService {
         );
 
         console.log(`📋 Tag "${mapping.chatwootTag}": ${tagContacts.length} contatos encontrados → Categoria: ${mapping.categoryId}`);
+        console.log(`📋 Exemplo de contatos com essa tag:`, tagContacts.slice(0, 2).map(c => ({ name: c.name, phone: c.phone_number, labels: c.labels })));
+        
+        // DEBUG: Validar categoryId
+        if (!mapping.categoryId) {
+          console.error(`❌ ERRO: categoryId ausente para tag "${mapping.chatwootTag}". Mapping:`, JSON.stringify(mapping, null, 2));
+          continue;
+        }
+
+        console.log(`🔄 Processando ${tagContacts.length} contatos para a tag "${mapping.chatwootTag}"...`);
 
         for (const contact of tagContacts) {
-          // Validar se contato existe
-          if (!contact) {
-            console.log(`Contato inválido, pulando...`);
-            continue;
-          }
+          try {
+            // Validar se contato existe
+            if (!contact) {
+              console.log(`Contato inválido, pulando...`);
+              continue;
+            }
 
           // Obter telefone (phone_number ou source_id como fallback)
           let rawPhone = contact.phone_number;
@@ -768,14 +778,19 @@ export class ChatwootService {
             }
           });
 
+          console.log(`🔍 Procurando contato com telefone ${normalizedPhone}... ${existingContact ? `Encontrado: ${existingContact.nome} (${existingContact.id})` : 'Não encontrado'}`);
+
           if (existingContact) {
             // Verificar se a categoria já está associada
             const categoryExists = existingContact.categories.some(
               cc => cc.categoryId === mapping.categoryId
             );
 
+            console.log(`🔍 Contato existente: ${existingContact.nome} - Categoria já associada: ${categoryExists}`);
+
             if (!categoryExists) {
               // Adicionar nova categoria ao contato existente (many-to-many)
+              console.log(`🔗 Criando ContactCategory: contactId=${existingContact.id}, categoryId=${mapping.categoryId}`);
               await prisma.contactCategory.create({
                 data: {
                   contactId: existingContact.id,
@@ -801,6 +816,7 @@ export class ChatwootService {
             updated++;
           } else {
             // Criar novo contato
+            console.log(`➕ Criando novo contato: ${contact.name || 'Sem nome'} (${normalizedPhone})`);
             const newContact = await prisma.contact.create({
               data: {
                 tenantId,
@@ -810,8 +826,10 @@ export class ChatwootService {
                 observacoes: `Importado do Chatwoot - Tag: ${mapping.chatwootTag}`
               }
             });
+            console.log(`✅ Contato criado com ID: ${newContact.id}`);
 
             // Associar categoria ao novo contato (many-to-many)
+            console.log(`🔗 Criando ContactCategory: contactId=${newContact.id}, categoryId=${mapping.categoryId}`);
             await prisma.contactCategory.create({
               data: {
                 contactId: newContact.id,
@@ -821,6 +839,12 @@ export class ChatwootService {
 
             imported++;
             console.log(`✅ Importado: ${contact.name || 'Sem nome'} (${normalizedPhone}) → Categoria: ${mapping.categoryId}`);
+          }
+          } catch (error: any) {
+            console.error(`❌ Erro ao processar contato ${contact?.name || 'desconhecido'}:`, error.message);
+            console.error('Stack:', error.stack);
+            warnings.push(`Erro ao processar ${contact?.name || 'contato'}: ${error.message}`);
+            hasWarning = true;
           }
         }
       }
