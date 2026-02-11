@@ -7,10 +7,19 @@ const prisma = new PrismaClient();
 
 // Pool de conexão PostgreSQL para acesso direto ao banco do Chatwoot (se configurado)
 let pgPool: Pool | null = null;
+let pgChatwootSchema: string | null = null;
 
 // Inicializar pool se PG_CHATWOOT_URL estiver configurado
 if (process.env.PG_CHATWOOT_URL) {
   console.log('🔌 PG_CHATWOOT_URL detectado - Habilitando acesso direto ao banco Chatwoot');
+  
+  // Extrair schema da connection string (ex: ?schema=iago)
+  const schemaMatch = process.env.PG_CHATWOOT_URL.match(/[?&]schema=([^&]+)/);
+  if (schemaMatch) {
+    pgChatwootSchema = schemaMatch[1];
+    console.log(`🗂️ Schema detectado: ${pgChatwootSchema}`);
+  }
+  
   pgPool = new Pool({
     connectionString: process.env.PG_CHATWOOT_URL,
     max: 10,
@@ -63,6 +72,9 @@ export class ChatwootService {
 
     console.log(`🗄️ Buscando contatos diretamente do banco Chatwoot (account ${accountId})...`);
     
+    // Usar schema se detectado, senão usa search_path padrão
+    const schemaPrefix = pgChatwootSchema ? `${pgChatwootSchema}.` : '';
+    
     const query = `
       SELECT 
         c.id AS contact_id,
@@ -71,12 +83,12 @@ export class ChatwootService {
         c.phone_number AS contact_phone_number,
         c.email AS contact_email,
         t.name AS tag_name
-      FROM contacts c
-      INNER JOIN taggings tgs 
+      FROM ${schemaPrefix}contacts c
+      INNER JOIN ${schemaPrefix}taggings tgs 
         ON tgs.taggable_id = c.id 
         AND tgs.taggable_type = 'Contact'
         AND tgs.context = 'labels'
-      INNER JOIN tags t 
+      INNER JOIN ${schemaPrefix}tags t 
         ON t.id = tgs.tag_id
       WHERE c.account_id = $1
       ORDER BY c.id, t.name;
@@ -156,8 +168,10 @@ export class ChatwootService {
       let hasWarning = false;
       const warnings: string[] = [];
 
-      // **SE PG_CHATWOOT_URL ESTIVER CONFIGURADO, USAR BANCO DIRETO**
-      if (pgPool) {
+      // **SE PG_CHATWOOT_URL ESTIVER CONFIGURADO E URL CORRESPONDER, USAR BANCO DIRETO**
+      const allowedBaseUrl = process.env.CHATWOOT_BASE_URL;
+      const shouldUseDirectDb = allowedBaseUrl && settings.chatwootUrl.includes(allowedBaseUrl);
+      if (pgPool && shouldUseDirectDb) {
         console.log('🗄️ Usando acesso direto ao banco Chatwoot (via PG_CHATWOOT_URL)');
         try {
           contacts = await this.getContactsFromDatabase(settings.chatwootAccountId);
@@ -166,9 +180,9 @@ export class ChatwootService {
         }
       }
 
-      // **USAR PAGINAÇÃO VIA API REST se pgPool não disponível ou falhou**
+      // **USAR PAGINAÇÃO VIA API REST se pgPool não disponível ou não corresponde**
       if (contacts.length === 0) {
-        if (!pgPool) {
+        if (!pgPool || !shouldUseDirectDb) {
           console.log('🌐 Usando API REST do Chatwoot (paginação)');
         }
 
@@ -309,8 +323,10 @@ export class ChatwootService {
       let contacts: ChatwootContact[] = [];
       const tagsAccumulated = new Map<string, Set<number>>();
 
-      // **SE PG_CHATWOOT_URL ESTIVER CONFIGURADO, USAR BANCO DIRETO**
-      if (pgPool) {
+      // **SE PG_CHATWOOT_URL ESTIVER CONFIGURADO E URL CORRESPONDER, USAR BANCO DIRETO**
+      const allowedBaseUrl = process.env.CHATWOOT_BASE_URL;
+      const shouldUseDirectDb = allowedBaseUrl && settings.chatwootUrl.includes(allowedBaseUrl);
+      if (pgPool && shouldUseDirectDb) {
         console.log('🗄️ Usando acesso direto ao banco Chatwoot (via PG_CHATWOOT_URL)');
         try {
           contacts = await this.getContactsFromDatabase(settings.chatwootAccountId);
@@ -354,9 +370,9 @@ export class ChatwootService {
         }
       }
 
-      // **USAR PAGINAÇÃO VIA API REST se pgPool não disponível ou falhou**
+      // **USAR PAGINAÇÃO VIA API REST se pgPool não disponível ou não corresponde**
       if (contacts.length === 0) {
-        if (!pgPool) {
+        if (!pgPool || !shouldUseDirectDb) {
           console.log('🌐 Usando API REST do Chatwoot (paginação com callbacks)');
         }
 
@@ -557,8 +573,10 @@ export class ChatwootService {
       } else {
         contacts = [];
 
-        // **SE PG_CHATWOOT_URL ESTIVER CONFIGURADO, USAR BANCO DIRETO**
-        if (pgPool) {
+        // **SE PG_CHATWOOT_URL ESTIVER CONFIGURADO E URL CORRESPONDER, USAR BANCO DIRETO**
+        const allowedBaseUrl = process.env.CHATWOOT_BASE_URL;
+        const shouldUseDirectDb = allowedBaseUrl && settings.chatwootUrl.includes(allowedBaseUrl);
+        if (pgPool && shouldUseDirectDb) {
           console.log('🗄️ Usando acesso direto ao banco Chatwoot (via PG_CHATWOOT_URL)');
           try {
             contacts = await this.getContactsFromDatabase(settings.chatwootAccountId);
