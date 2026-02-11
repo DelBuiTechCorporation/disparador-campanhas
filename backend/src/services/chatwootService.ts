@@ -306,14 +306,66 @@ export class ChatwootService {
         throw new Error('Chatwoot não está configurado. Configure na página de Integrações.');
       }
 
-      const contacts: ChatwootContact[] = [];
-      let page = 1;
-      let hasMore = true;
-      let pagesFetched = 0;
+      let contacts: ChatwootContact[] = [];
       const tagsAccumulated = new Map<string, Set<number>>();
 
-      // Paginar através de todos os contatos e fazer callbacks
-      while (hasMore) {
+      // **SE PG_CHATWOOT_URL ESTIVER CONFIGURADO, USAR BANCO DIRETO**
+      if (pgPool) {
+        console.log('🗄️ Usando acesso direto ao banco Chatwoot (via PG_CHATWOOT_URL)');
+        try {
+          contacts = await this.getContactsFromDatabase(settings.chatwootAccountId);
+          
+          // Processar tags
+          contacts.forEach((contact) => {
+            if (contact.labels && contact.labels.length > 0 && contact.id) {
+              contact.labels.forEach((tag) => {
+                if (!tagsAccumulated.has(tag)) {
+                  tagsAccumulated.set(tag, new Set());
+                }
+                tagsAccumulated.get(tag)?.add(contact.id);
+              });
+            }
+          });
+
+          // Enviar callback único com todas as tags (já que carregou tudo de uma vez)
+          const tagsArray = Array.from(tagsAccumulated.entries())
+            .map(([name, senderIds]) => ({
+              name,
+              count: senderIds.size
+            }))
+            .sort((a, b) => b.count - a.count);
+
+          onUpdate(tagsArray);
+          
+          // Salvar no cache
+          contactsCache.set(tenantId, {
+            data: contacts,
+            timestamp: Date.now(),
+            ttl: CACHE_TTL
+          });
+          console.log(`💾 Cache atualizado: ${contacts.length} contatos do banco direto`);
+
+          syncInProgress.delete(tenantId);
+          return tagsArray;
+
+        } catch (error: any) {
+          console.warn(`⚠️ Erro ao buscar do banco, fallback para API: ${error.message}`);
+          // Continua para fallback API REST abaixo
+        }
+      }
+
+      // **USAR PAGINAÇÃO VIA API REST se pgPool não disponível ou falhou**
+      if (contacts.length === 0) {
+        if (!pgPool) {
+          console.log('🌐 Usando API REST do Chatwoot (paginação com callbacks)');
+        }
+
+        let page = 1;
+        let hasMore = true;
+        let pagesFetched = 0;
+
+        // Paginar através de todos os contatos e fazer callbacks
+        while (hasMore) {
         // Verificar se foi cancelado ANTES de fazer nova requisição
         if (abortController.signal.aborted) {
           console.log(`⚠️ Sincronização cancelada pelo usuário. Parando loop de paginação`);
@@ -418,16 +470,17 @@ export class ChatwootService {
         }
       }
 
-      console.log(`🏁 Carregamento de tags finalizado - Total: ${tagsAccumulated.size} tags únicas`);
-      
-      // Salvar contatos no cache (final ou cancelado)
-      contactsCache.set(tenantId, {
-        data: contacts,
-        timestamp: Date.now(),
-        ttl: CACHE_TTL
-      });
-      console.log(`💾 Cache finalizado para tenant ${tenantId}: ${contacts.length} contatos (válido por 10 minutos)`);
-      
+        console.log(`🏁 Carregamento de tags finalizado - Total: ${tagsAccumulated.size} tags únicas`);
+        
+        // Salvar contatos no cache (final ou cancelado)
+        contactsCache.set(tenantId, {
+          data: contacts,
+          timestamp: Date.now(),
+          ttl: CACHE_TTL
+        });
+        console.log(`💾 Cache finalizado para tenant ${tenantId}: ${contacts.length} contatos (válido por 10 minutos)`);
+      }
+
       syncInProgress.delete(tenantId);
 
       // Retornar tags finais
@@ -438,7 +491,7 @@ export class ChatwootService {
         }))
         .sort((a, b) => b.count - a.count);
 
-      console.log(`✅ Carregadas ${finalTags.length} tags únicas do Chatwoot em ${pagesFetched} páginas`);
+      console.log(`✅ Carregadas ${finalTags.length} tags únicas`);
 
       syncInProgress.delete(tenantId);
       return finalTags;
@@ -502,18 +555,42 @@ export class ChatwootService {
         console.log(`📦 Usando contatos em cache (${cached.data.length} contatos) - evitando re-paginação!`);
         contacts = cached.data;
       } else {
-        if (cached) {
-          console.log(`⏰ Cache expirado, buscando contatos novamente...`);
-        } else {
-          console.log(`🔍 Nenhum cache disponível, iniciando paginação...`);
+        contacts = [];
+
+        // **SE PG_CHATWOOT_URL ESTIVER CONFIGURADO, USAR BANCO DIRETO**
+        if (pgPool) {
+          console.log('🗄️ Usando acesso direto ao banco Chatwoot (via PG_CHATWOOT_URL)');
+          try {
+            contacts = await this.getContactsFromDatabase(settings.chatwootAccountId);
+            
+            // Salvar no cache
+            contactsCache.set(tenantId, {
+              data: contacts,
+              timestamp: Date.now(),
+              ttl: CACHE_TTL
+            });
+            console.log(`💾 Cache atualizado: ${contacts.length} contatos do banco direto`);
+          } catch (error: any) {
+            console.warn(`⚠️ Erro ao buscar do banco, fallback para API: ${error.message}`);
+            warnings.push(`Erro ao acessar banco Chatwoot: ${error.message}`);
+            hasWarning = true;
+            contacts = [];
+          }
         }
 
-        // Buscar todos os contatos com paginação
-        contacts = [];
-        let page = 1;
-        let hasMore = true;
+        // **USAR PAGINAÇÃO VIA API REST se pgPool não disponível ou falhou**
+        if (contacts.length === 0) {
+          if (cached) {
+            console.log(`⏰ Cache expirado, buscando contatos novamente...`);
+          } else if (!pgPool) {
+            console.log(`🔍 Nenhum cache disponível, iniciando paginação...`);
+          }
 
-        while (hasMore) {
+          // Buscar todos os contatos com paginação
+          let page = 1;
+          let hasMore = true;
+
+          while (hasMore) {
           // Verificar se foi cancelado ANTES de fazer nova requisição
           if (abortController.signal.aborted) {
             console.log(`⚠️ Sincronização cancelada pelo usuário. Parando loop de paginação`);
@@ -574,13 +651,14 @@ export class ChatwootService {
           }
         }
 
-        // Salvar no cache
-        contactsCache.set(tenantId, {
-          data: contacts,
-          timestamp: Date.now(),
-          ttl: CACHE_TTL
-        });
-        console.log(`💾 Cache atualizado: ${contacts.length} contatos armazenados`);
+          // Salvar no cache
+          contactsCache.set(tenantId, {
+            data: contacts,
+            timestamp: Date.now(),
+            ttl: CACHE_TTL
+          });
+          console.log(`💾 Cache atualizado: ${contacts.length} contatos armazenados`);
+        }
       }
 
       console.log(`📊 Total de ${contacts.length} contatos ${cached && (Date.now() - cached.timestamp) < cached.ttl ? 'do cache' : `carregados em ${pagesFetched} páginas`}`);
