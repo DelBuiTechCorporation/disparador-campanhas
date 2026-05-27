@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Header } from '../components/Header';
 import { Portal } from '../components/Portal';
+import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../hooks/useSettings';
 import { useTenant } from '../contexts/TenantContext';
 
@@ -58,12 +59,15 @@ interface WhatsAppSession {
 
 export function WhatsAppConnectionsPage() {
   const { settings } = useSettings();
+  const { user } = useAuth();
   const { selectedTenantId, loading: tenantLoading } = useTenant();
+  const isSuperAdmin = user?.role === 'SUPERADMIN';
   const [sessions, setSessions] = useState<WhatsAppSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [newSessionName, setNewSessionName] = useState('');
   const [newSessionProvider, setNewSessionProvider] = useState<'WAHA'>('WAHA');
   const [isCreating, setIsCreating] = useState(false);
+  const [isGlobalSyncing, setIsGlobalSyncing] = useState(false);
   const [loadingQR, setLoadingQR] = useState<string | null>(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [currentQRSession, setCurrentQRSession] = useState<WhatsAppSession | null>(null);
@@ -92,7 +96,7 @@ export function WhatsAppConnectionsPage() {
   }, []);
 
   // Helper para fazer requisições autenticadas
-  const authenticatedFetch = async (url: string, options: RequestInit = {}) => {
+  const authenticatedFetch = async (url: string, options: RequestInit = {}, includeTenantHeader = true) => {
     const token = localStorage.getItem('auth_token');
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -104,7 +108,7 @@ export function WhatsAppConnectionsPage() {
     }
 
     // Adicionar tenant ID no header para SuperAdmin
-    if (selectedTenantId) {
+    if (includeTenantHeader && selectedTenantId) {
       (headers as Record<string, string>)['X-Tenant-Id'] = selectedTenantId;
     }
 
@@ -112,6 +116,23 @@ export function WhatsAppConnectionsPage() {
       ...options,
       headers,
     });
+  };
+
+  const normalizeSessions = (data: any) => {
+    const sessionList = Array.isArray(data) ? data : (data.sessions || []);
+
+    const processedSessions = sessionList.map((session: any) => ({
+      name: session.name,
+      displayName: session.displayName || session.name,
+      status: session.status || 'STOPPED',
+      provider: session.provider || 'WAHA',
+      me: session.me || null,
+      qr: session.qr || null,
+      qrExpiresAt: session.qrExpiresAt ? new Date(session.qrExpiresAt) : undefined
+    }));
+
+    setSessions(processedSessions);
+    setTotalSessions(data.total !== undefined ? data.total : processedSessions.length);
   };
 
   useEffect(() => {
@@ -226,24 +247,7 @@ export function WhatsAppConnectionsPage() {
       const data = await response.json();
 
       // Processar dados das sessões incluindo QR code salvo no banco
-      const processedSessions = (data.sessions || data).map((session: any) => ({
-        name: session.name,
-        displayName: session.displayName || session.name,
-        status: session.status || 'STOPPED',
-        provider: session.provider || 'WAHA',
-        me: session.me || null,
-        qr: session.qr || null,
-        qrExpiresAt: session.qrExpiresAt ? new Date(session.qrExpiresAt) : undefined
-      }));
-
-      setSessions(processedSessions);
-      
-      // Se a resposta tem formato paginado
-      if (data.total !== undefined) {
-        setTotalSessions(data.total);
-      } else {
-        setTotalSessions(processedSessions.length);
-      }
+      normalizeSessions(data);
 
       if (showLoading) {
         setLoading(false);
@@ -254,6 +258,34 @@ export function WhatsAppConnectionsPage() {
         toast.error('Erro ao carregar sessões WhatsApp');
         setLoading(false);
       }
+    }
+  };
+
+  const syncGlobalSessions = async () => {
+    if (!isSuperAdmin) {
+      return;
+    }
+
+    setIsGlobalSyncing(true);
+    try {
+      const response = await authenticatedFetch('/api/waha/sessions/global', {
+        method: 'GET'
+      }, false);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      normalizeSessions(data);
+      toast.success('Sessões sincronizadas globalmente');
+    } catch (error) {
+      console.error('Erro ao sincronizar sessões globalmente:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao sincronizar sessões globalmente');
+    } finally {
+      setIsGlobalSyncing(false);
+      setLoading(false);
     }
   };
 
@@ -517,6 +549,15 @@ export function WhatsAppConnectionsPage() {
         subtitle={`${totalSessions} ${totalSessions === 1 ? 'sessão encontrada' : 'sessões encontradas'}`}
         actions={
           <div className="flex gap-3">
+            {isSuperAdmin && (
+              <button
+                onClick={() => syncGlobalSessions()}
+                disabled={isGlobalSyncing}
+                className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isGlobalSyncing ? 'Sincronizando...' : 'Sincronizar global'}
+              </button>
+            )}
             <button
               onClick={() => setCreateSessionModalOpen(true)}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium transition-colors"
