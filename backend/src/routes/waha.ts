@@ -97,6 +97,25 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
   }
 });
 
+// Listar todas as sessões WAHA do sistema e sincronizar com o banco (SUPERADMIN only)
+router.get('/sessions/global', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    console.log('🌍 GET /sessions/global - user:', req.user?.email, 'role:', req.user?.role, 'tenantId:', req.tenantId);
+
+    if (req.user?.role !== 'SUPERADMIN') {
+      return res.status(403).json({ error: 'Apenas SUPERADMIN pode listar todas as sessões globalmente' });
+    }
+
+    const sessions = await WahaSyncService.syncAllSessions();
+    const wahaSessions = sessions.filter((session: any) => session.provider === 'WAHA');
+
+    res.json(wahaSessions);
+  } catch (error) {
+    console.error('Erro ao listar sessões globais:', error);
+    res.status(500).json({ error: 'Erro ao listar sessões globais' });
+  }
+});
+
 // Obter informações de uma sessão específica
 router.get('/sessions/:sessionName', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
